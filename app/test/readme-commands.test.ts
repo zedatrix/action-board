@@ -117,6 +117,8 @@ describe("README ab.mjs commands", () => {
         allowCustom: true,
         link: merge.card_ref,
         decision_id: "vendor-contract-q3",
+        priority: "medium",
+        blocking: false,
         footer: expect.stringContaining("(vendor-contract-q3)"),
       },
     });
@@ -124,6 +126,8 @@ describe("README ab.mjs commands", () => {
     const d = find("vendor-contract-q3")!;
     expect(d).toMatchObject({ context: raiseJson.context, card_ref: merge.card_ref, what_happens_after: merge.what_happens_after, options: merge.options });
     expect(d.title).toBe("Q3 vendor contract renewal");
+    expect(d.blocking).toBe(false);
+    expect(d).not.toHaveProperty("priority");
     expect(Object.keys(d).slice(0, 2)).toEqual(["id", "title"]);
     expect(d.answer).toBeUndefined();
     expect(Date.parse(d.created_at)).not.toBeNaN();
@@ -176,6 +180,10 @@ describe("README ab.mjs commands", () => {
       [{ ...raiseJson, title: "a".repeat(61) }, /^ab: title is 61 chars; keep it to 60 or fewer/],
       [{ ...raiseJson, title: "Q3 vendor\ncontract renewal" }, /^ab: title must be one line/],
       [{ ...raiseJson, title: 1461 }, /^ab: title is required/],
+      [{ ...raiseJson, blocking: undefined }, /^ab: blocking is required: true if this card blocks a PR, merge, ticket or task, else false$/m],
+      [{ ...raiseJson, blocking: "yes" }, /^ab: blocking is required/],
+      [{ ...raiseJson, blocking: true, priority: "medium" }, /^ab: blocking cards are always high priority/],
+      [{ ...raiseJson, blocking: true, priority: "low" }, /^ab: blocking cards are always high priority/],
     ];
     for (const [d, msg] of bad) refused(raiseWith(d), 2, msg);
     expect(read().decisions).toEqual([]);
@@ -305,14 +313,17 @@ describe("README ab.mjs commands", () => {
     expect(run(`${AB} check`).json()).toMatchObject({
       priority_open: { high: 1, medium: 1, low: 0 },
       open_priority: [
-        { id: "vendor-contract-q3", priority: "high" },
-        { id: "offsite-venue-quotes", priority: "medium" },
+        { id: "vendor-contract-q3", priority: "high", blocking: null },
+        { id: "offsite-venue-quotes", priority: "medium", blocking: null },
       ],
     });
     // raise's priority shows on the printed card; a re-raise without it keeps the stored one.
     expect(run(raiseCmd).json().card.priority).toBe("high");
     expect(find("vendor-contract-q3")!.priority).toBe("high");
     refused(raiseWith({ ...raiseJson, priority: "urgent" }), 2, /priority must be high, medium or low/);
+    // A blocking card stays high: raising it with blocking:true keeps it high, and ab priority refuses a lower level.
+    expect(run(raiseWith({ ...raiseJson, blocking: true })).json().card).toMatchObject({ priority: "high", blocking: true });
+    refused(`${AB} priority vendor-contract-q3 low`, 2, /vendor-contract-q3 is a blocking card; blocking cards stay high/);
     refused(`${AB} priority vendor-contract-q3 urgent`, 2, /usage: ab priority <id> <high\|medium\|low>/);
     refused(`${AB} priority vendor-contract-q3`, 2, /usage: ab priority/);
     refused(`${AB} priority nope-1 low`, 5, /no decision nope-1 on the board/);
@@ -379,8 +390,8 @@ describe("README ab.mjs commands", () => {
       counts: { waiting: glance0.waiting.length, tickets: glance0.tickets.length, others: glance0.others?.length ?? 0 },
       priority_open: { high: 0, medium: 2, low: 0 },
       open_priority: [
-        { id: "vendor-contract-q3", priority: "medium" },
-        { id: "offsite-venue-quotes", priority: "medium" },
+        { id: "vendor-contract-q3", priority: "medium", blocking: null },
+        { id: "offsite-venue-quotes", priority: "medium", blocking: null },
       ],
       problems: [],
     });

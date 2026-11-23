@@ -192,7 +192,7 @@ describe("/__ab/events and /__ab/board on the Vite dev server", () => {
     expect(first.event).toBe("board");
     expect(JSON.parse(first.data).glance.waiting.length).toBeGreaterThan(0);
 
-    const d = { id: "live-1", title: "Live check card", context: "A test card for the live board check. It should show on the page within two seconds.", question: "Live?", what_happens_after: "It shows.", options: [{ id: "yes", label: "Yes" }] };
+    const d = { id: "live-1", title: "Live check card", context: "A test card for the live board check. It should show on the page within two seconds.", question: "Live?", what_happens_after: "It shows.", options: [{ id: "yes", label: "Yes" }], blocking: false };
     const started = Date.now();
     // Not AB_NO_SERVER: ab raise exits 0 only once this server's /__ab/board serves the decision.
     const env: NodeJS.ProcessEnv = { ...process.env, AB_FILE: boardFile, AB_URL: base };

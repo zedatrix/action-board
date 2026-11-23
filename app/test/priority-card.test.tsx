@@ -233,6 +233,27 @@ describe("Needs you: priority order and taps", () => {
     expect(document.querySelector(".queue")!.nextElementSibling!.className).toBe("queue-end");
   });
 
+  it("renders the High section, with a blocking card, before Medium and Low whatever the file order", async () => {
+    const es = await renderApp();
+    act(() =>
+      es.board({
+        ...initial,
+        updated_at: new Date().toISOString(),
+        decisions: [
+          d("b-low", { priority: "low", blocking: false, created_at: "2026-11-01T09:00:00.000Z" }),
+          d("b-old", { created_at: "2026-11-02T09:00:00.000Z" }),
+          d("b-block", { priority: "high", blocking: true, created_at: "2026-11-20T09:00:00.000Z" }),
+        ],
+      }),
+    );
+    expect(sections().map((s) => [s.level, s.ids])).toEqual([
+      ["high", ["b-block"]],
+      ["medium", ["b-old"]],
+      ["low", ["b-low"]],
+    ]);
+    expect(card("b-block").querySelector(".idx")!.textContent).toBe("1");
+  });
+
   it("renders no section for a level with no cards", async () => {
     const es = await renderApp();
     act(() =>

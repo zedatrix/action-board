@@ -40,6 +40,7 @@ export const board: Board =
       ],
       "card_ref": "https://example.com/contracts/q3-hosting",
       "priority": "high",
+      "blocking": true,
       "created_at": "2026-11-23T14:00:00.000Z",
       "updated_at": "2026-11-23T14:00:00.000Z"
     },
@@ -71,6 +72,7 @@ export const board: Board =
       ],
       "card_ref": null,
       "priority": "medium",
+      "blocking": false,
       "created_at": "2026-11-23T14:10:00.000Z",
       "updated_at": "2026-11-23T14:10:00.000Z"
     },
@@ -97,6 +99,7 @@ export const board: Board =
       "multiSelect": true,
       "card_ref": null,
       "priority": "low",
+      "blocking": false,
       "created_at": "2026-11-23T14:20:00.000Z",
       "updated_at": "2026-11-23T14:20:00.000Z"
     }
