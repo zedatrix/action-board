@@ -9,8 +9,25 @@ other context. Every command, payload and exit code below comes from the code in
 checklist at the end ([Setup checklist for a chief of staff bot](#setup-checklist-for-a-chief-of-staff-bot)) is the
 order to do things in.
 
+## Screenshots
+
+All three show the example data that ships in `app/src/data/`.
+
+The Board tab on a desktop: open decisions grouped by priority on the left, the "at a glance" lists on the right.
+
+![The Board tab on a desktop](docs/screenshots/board-desktop.png)
+
+The project tab: milestone progress with a summed total line.
+
+![The project tab](docs/screenshots/project-tab-desktop.png)
+
+The Board tab on a phone (390px wide).
+
+<img src="docs/screenshots/board-phone.png" alt="The Board tab on a phone" width="320">
+
 ## Contents
 
+- [Screenshots](#screenshots)
 - [What it is](#what-it-is)
 - [Requirements and install](#requirements-and-install)
 - [Configuration](#configuration)
@@ -874,11 +891,13 @@ node local-e2e.mjs      # temp copy of the app on a free port, mock receivers: a
 node live-check.mjs     # temp copy on a free port: how fast ab changes reach the page
 node webhook-check.mjs --url http://127.0.0.1:8085 --id <decision id>   # one real answer through the running board's webhook
 AB_URL=http://127.0.0.1:8085 node project-shots.mjs                       # project tab on the running board; screenshots in runs/
+AB_URL=http://127.0.0.1:8085 node readme-shots.mjs                        # read-only: retakes the README screenshots in docs/screenshots/
 ```
 
 `local-e2e.mjs` and `live-check.mjs` never touch the real data files. `webhook-check.mjs` answers a real card on the
 running board. `project-shots.mjs` runs `project-refresh` on the real `project.ts` with the counts already in it and
-then restores it byte for byte.
+then restores it byte for byte. `readme-shots.mjs` only loads the page; run it against the example data, never a real
+board, because the images are committed.
 
 ## Security notes
 
