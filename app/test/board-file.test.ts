@@ -50,11 +50,12 @@ function checkBoard(b: any): string[] {
   need(Array.isArray(b.decisions), "decisions array");
   for (const d of b.decisions ?? []) {
     need(
-      onlyKeys(d, ["id", "title", "card_ref", "context", "question", "details", "what_happens_after", "options", "created_at", "updated_at", "multiSelect", "allowCustom", "priority", "blocking", "answer"]),
+      onlyKeys(d, ["id", "title", "card_ref", "context", "question", "details", "what_happens_after", "options", "created_at", "updated_at", "multiSelect", "allowCustom", "priority", "blocking", "blocks", "answer"]),
       `keys of ${d.id}`,
     );
     need(d.priority === undefined || ["high", "medium", "low"].includes(d.priority), `priority of ${d.id}`);
     need(d.blocking === undefined || typeof d.blocking === "boolean", `blocking of ${d.id}`);
+    need(d.blocks === undefined || (d.blocking === true && isStr(d.blocks) && d.blocks.trim().length > 0), `blocks of ${d.id}`);
     need(d.context === undefined || (isStr(d.context) && d.context.trim().length > 0), `context of ${d.id}`);
     need(d.multiSelect === undefined || typeof d.multiSelect === "boolean", `multiSelect of ${d.id}`);
     need(d.allowCustom === undefined || typeof d.allowCustom === "boolean", `allowCustom of ${d.id}`);

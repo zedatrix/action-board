@@ -44,6 +44,16 @@ describe("DecisionCard: single select", () => {
   });
 });
 
+describe("DecisionCard: blocks", () => {
+  it("shows Blocks: <text> only when the card has blocks", () => {
+    renderCard({ ...base, blocking: true, priority: "high", blocks: "Signing the Q3 hosting contract" });
+    expect(screen.getByText("Blocks: Signing the Q3 hosting contract")).toBeTruthy();
+    cleanup();
+    renderCard(base);
+    expect(screen.queryByText(/^Blocks:/)).toBeNull();
+  });
+});
+
 describe("DecisionCard: multi select", () => {
   it("toggles options with aria-pressed and keeps Submit disabled until something is picked", () => {
     const onAnswer = renderCard(multi);

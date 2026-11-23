@@ -69,9 +69,10 @@ const seed = (decisions: Decision[]) => {
 };
 beforeEach(() => seed([]));
 
-const run = (cmd: string) => {
+const run = (cmd: string, extra: NodeJS.ProcessEnv = {}) => {
   const env: NodeJS.ProcessEnv = { ...process.env, AB_FILE: file, AB_NO_SERVER: "1" };
-  for (const k of ["AB_URL", "ACTION_BOARD_HOST", "ACTION_BOARD_PORT"]) delete env[k];
+  for (const k of ["AB_URL", "ACTION_BOARD_HOST", "ACTION_BOARD_PORT", "AB_MAX_HIGH"]) delete env[k];
+  Object.assign(env, extra);
   const r = spawnSync("bash", ["-c", cmd], { cwd: repo, env, encoding: "utf8", timeout: 10000 });
   return { status: r.status, out: r.stdout, err: r.stderr, json: () => JSON.parse(r.stdout) };
 };
@@ -119,6 +120,7 @@ describe("README ab.mjs commands", () => {
         decision_id: "vendor-contract-q3",
         priority: "medium",
         blocking: false,
+        blocks: null,
         footer: expect.stringContaining("(vendor-contract-q3)"),
       },
     });
@@ -128,6 +130,7 @@ describe("README ab.mjs commands", () => {
     expect(d.title).toBe("Q3 vendor contract renewal");
     expect(d.blocking).toBe(false);
     expect(d).not.toHaveProperty("priority");
+    expect(d).not.toHaveProperty("blocks");
     expect(Object.keys(d).slice(0, 2)).toEqual(["id", "title"]);
     expect(d.answer).toBeUndefined();
     expect(Date.parse(d.created_at)).not.toBeNaN();
@@ -182,11 +185,55 @@ describe("README ab.mjs commands", () => {
       [{ ...raiseJson, title: 1461 }, /^ab: title is required/],
       [{ ...raiseJson, blocking: undefined }, /^ab: blocking is required: true if this card blocks a PR, merge, ticket or task, else false$/m],
       [{ ...raiseJson, blocking: "yes" }, /^ab: blocking is required/],
-      [{ ...raiseJson, blocking: true, priority: "medium" }, /^ab: blocking cards are always high priority/],
-      [{ ...raiseJson, blocking: true, priority: "low" }, /^ab: blocking cards are always high priority/],
+      [{ ...raiseJson, blocking: true, blocks: "Signing the Q3 hosting contract", priority: "medium" }, /^ab: blocking cards are always high priority/],
+      [{ ...raiseJson, blocking: true, blocks: "Signing the Q3 hosting contract", priority: "low" }, /^ab: blocking cards are always high priority/],
+      [{ ...raiseJson, blocking: true }, /^ab: blocking:true needs "blocks" \(1 to 200 chars\) naming the work it blocks: a card is blocking only when a named piece of in-flight work \(a specific open PR, merge or task being actively driven\) cannot move until the user answers$/m],
+      [{ ...raiseJson, blocking: true, blocks: "" }, /^ab: blocking:true needs "blocks"/],
+      [{ ...raiseJson, blocking: true, blocks: "   " }, /^ab: blocking:true needs "blocks"/],
+      [{ ...raiseJson, blocking: true, blocks: "x".repeat(201) }, /^ab: blocking:true needs "blocks" \(1 to 200 chars\)/],
+      [{ ...raiseJson, blocks: "Signing the Q3 hosting contract" }, /^ab: blocks is only for blocking:true cards: a card is blocking only when/],
     ];
     for (const [d, msg] of bad) refused(raiseWith(d), 2, msg);
     expect(read().decisions).toEqual([]);
+  });
+
+  it("raise: blocks is stored trimmed and listed in open; a re-raise with blocking:false drops it", () => {
+    const card = run(raiseWith({ ...raiseJson, blocking: true, blocks: "  Signing the Q3 hosting contract  " })).json().card;
+    expect(card).toMatchObject({ priority: "high", blocking: true, blocks: "Signing the Q3 hosting contract" });
+    expect(find("vendor-contract-q3")!.blocks).toBe("Signing the Q3 hosting contract");
+    expect(run(openCmd).json().open_priority).toEqual([{ id: "vendor-contract-q3", priority: "high", blocking: true, blocks: "Signing the Q3 hosting contract" }]);
+    expect(run(raiseCmd).json().card).toMatchObject({ blocking: false, blocks: null });
+    expect(find("vendor-contract-q3")).not.toHaveProperty("blocks");
+    expect(find("vendor-contract-q3")!.blocking).toBe(false);
+    expect(run(openCmd).json().open_priority).toEqual([{ id: "vendor-contract-q3", priority: "high", blocking: false, blocks: null }]);
+  });
+
+  it("check and lint: flag an open blocking card without blocks; check flags more than AB_MAX_HIGH open high cards", () => {
+    const answered = { ...merge, id: "answered-1", blocking: true, priority: "high", answer: { answer: "approve", answer_label: "Approve", answered_by: "chat", answered_at: "2026-11-10T09:05:00.000Z" } } as Decision;
+    seed([{ ...merge, blocking: true, priority: "high" }, { ...notify, blocking: true, priority: "high", blocks: " " }, answered]);
+    const check = run(checkCmd);
+    expect(check.status).toBe(1);
+    expect(check.json().problems).toEqual([
+      "blocking is true but blocks is empty: name the in-flight work it holds up, or raise vendor-contract-q3 again with blocking:false",
+      "blocking is true but blocks is empty: name the in-flight work it holds up, or raise offsite-venue-quotes again with blocking:false",
+    ]);
+    const lint = run(lintCmd);
+    expect(lint.status).toBe(1);
+    expect(lint.json().failing).toEqual([
+      { id: "vendor-contract-q3", problems: [expect.stringMatching(/^blocking is true but blocks is empty/)] },
+      { id: "offsite-venue-quotes", problems: [expect.stringMatching(/^blocking is true but blocks is empty/)] },
+    ]);
+
+    const highs = (n: number) => [...Array(n)].map((_, i) => ({ ...merge, id: `high-${i + 1}`, priority: "high" }) as Decision);
+    seed([...highs(10), { ...notify, priority: "low" }, answered]);
+    expect(run(`${AB} check`).status).toBe(0);
+    seed([...highs(11), answered]);
+    const flood = run(`${AB} check`);
+    expect(flood.status).toBe(1);
+    expect(flood.json().problems).toEqual(["11 open cards are high (limit 10): a flood of high cards hides the real blockers"]);
+    expect(run(lintCmd).status).toBe(0);
+    expect(run(`${AB} check`, { AB_MAX_HIGH: "20" }).status).toBe(0);
+    refused(`AB_MAX_HIGH=0 ${AB} check`, 2, /^ab: AB_MAX_HIGH must be a positive integer$/m);
   });
 
   it("answer: one option, as written; a retry is a no-op and an answered decision cannot be raised again", () => {
@@ -313,8 +360,8 @@ describe("README ab.mjs commands", () => {
     expect(run(`${AB} check`).json()).toMatchObject({
       priority_open: { high: 1, medium: 1, low: 0 },
       open_priority: [
-        { id: "vendor-contract-q3", priority: "high", blocking: null },
-        { id: "offsite-venue-quotes", priority: "medium", blocking: null },
+        { id: "vendor-contract-q3", priority: "high", blocking: null, blocks: null },
+        { id: "offsite-venue-quotes", priority: "medium", blocking: null, blocks: null },
       ],
     });
     // raise's priority shows on the printed card; a re-raise without it keeps the stored one.
@@ -322,7 +369,7 @@ describe("README ab.mjs commands", () => {
     expect(find("vendor-contract-q3")!.priority).toBe("high");
     refused(raiseWith({ ...raiseJson, priority: "urgent" }), 2, /priority must be high, medium or low/);
     // A blocking card stays high: raising it with blocking:true keeps it high, and ab priority refuses a lower level.
-    expect(run(raiseWith({ ...raiseJson, blocking: true })).json().card).toMatchObject({ priority: "high", blocking: true });
+    expect(run(raiseWith({ ...raiseJson, blocking: true, blocks: "Signing the Q3 hosting contract" })).json().card).toMatchObject({ priority: "high", blocking: true });
     refused(`${AB} priority vendor-contract-q3 low`, 2, /vendor-contract-q3 is a blocking card; blocking cards stay high/);
     refused(`${AB} priority vendor-contract-q3 urgent`, 2, /usage: ab priority <id> <high\|medium\|low>/);
     refused(`${AB} priority vendor-contract-q3`, 2, /usage: ab priority/);
@@ -390,8 +437,8 @@ describe("README ab.mjs commands", () => {
       counts: { waiting: glance0.waiting.length, tickets: glance0.tickets.length, others: glance0.others?.length ?? 0 },
       priority_open: { high: 0, medium: 2, low: 0 },
       open_priority: [
-        { id: "vendor-contract-q3", priority: "medium", blocking: null },
-        { id: "offsite-venue-quotes", priority: "medium", blocking: null },
+        { id: "vendor-contract-q3", priority: "medium", blocking: null, blocks: null },
+        { id: "offsite-venue-quotes", priority: "medium", blocking: null, blocks: null },
       ],
       problems: [],
     });

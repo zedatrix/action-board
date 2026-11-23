@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 // ab: the ONLY supported way to raise, answer, clear, restore or check a decision on the Action Board
 // (app/src/data/board.ts, served by the dev server). Run it from anywhere: paths are found from this file.
+// Blocking: a card is blocking only when a named piece of in-flight work (a specific open PR, merge or task being actively
+// driven) cannot move until the user answers. Rules or process questions, optional proofs, and cards older than a day or
+// two are not blocking. A blocking card names that work in "blocks".
 // `ab raise` writes the board, confirms the live server serves it, and only then prints
 // the chat-card payload. No board write => no card text => no chat-only decision.
 //
@@ -22,12 +25,15 @@
 //     optional "details": short structure shown under the question. Each entry is a bullet string, or a
 //     labeled list {"label":"...","items":["...",...],"ordered":true|false}. Keep "question" a short headline.
 //     "details":["Reads CRM contacts nightly",{"label":"Defaults","items":["Sync every 24h","Read-only"]},{"label":"Tradeoffs","ordered":true,"items":["Cheaper","Slower to show changes"]}]
-//     "blocking" (required, stored): true if this card blocks a PR, merge, ticket or task, else false. Missing or not a
+//     "blocking" (required, stored): true only for a blocking card (definition above), else false. Missing or not a
 //     boolean: exit 2, board untouched. true forces priority "high": a passed "medium" or "low" is refused (exit 2), and a
 //     re-raise with true upgrades the stored priority to high. Cards raised before this field have none (unknown).
+//     "blocks" (stored trimmed): the in-flight work this card blocks, e.g. "PR #1461 hired application guard merge".
+//     Required with blocking:true (non-empty after trim, max 200 chars); refused with blocking:false; else exit 2, board
+//     untouched. A re-raise with blocking:false drops it. Printed on the card and in open (null when absent).
 //     optional "priority": "high", "medium" or "low" (anything else: exit 2, board untouched). Left out: a new card is stored
 //     without it (medium) unless blocking; a re-raise keeps the stored one. The printed card carries the effective priority
-//     ("medium" if none) and blocking.
+//     ("medium" if none), blocking and blocks.
 //   ab answer <id> <opt[,opt]> --by chat|app [--at ISO]
 //   ab answer <id> --custom "text" --by chat|app [--at ISO]
 //   ab clear <id> --reason "why"                    (tombstoned: raise refuses it later) -> {"ok","status":"cleared","id"}
@@ -43,15 +49,17 @@
 //                                                      -> {"ok","id","priority","was","live"}; unknown id exit 5, answered exit 4,
 //                                                      medium or low on a card stored with blocking:true exit 2 (blocking cards stay high)
 //   ab open                                         -> open decision ids, file vs served, file glance counts {waiting,tickets,others},
-//                                                      priority_open {high,medium,low} and open_priority [{id,priority,blocking}]
-//                                                      (missing priority = medium, missing blocking = null); an open blocking:true card
-//                                                      that is not high is listed in problems
+//                                                      priority_open {high,medium,low} and open_priority [{id,priority,blocking,blocks}]
+//                                                      (missing priority = medium, missing blocking/blocks = null); problems lists an open
+//                                                      blocking:true card that is not high or has no blocks, and more than AB_MAX_HIGH
+//                                                      (default 10) open high cards (a flood of high cards hides the real blockers)
 //   ab check [--chat id1,id2]                       -> same as open; exit 1 on any mismatch or problem
 //   ab glance < glance.json                         ({"waiting":[...],"tickets":[...],"others":[...]}; replaces the glance;
 //                                                      others is optional (missing = []), each exactly {title,author,who,link},
 //                                                      non-blank strings, link http(s)) -> {"ok","live","counts":{waiting,tickets,others}}
 //   ab lint                                         -> {"ok","failing":[{"id","problems":[...]}]}: open decisions breaking
-//                                                      the title/context/question rules above, or blocking:true but not high; exit 1
+//                                                      the title/context/question rules above, or blocking:true but not high or
+//                                                      without blocks; exit 1
 //                                                      if any (fix with ab raise, ab priority <id> high,
 //                                                      or ab backfill-titles for cards raised before titles were stored)
 //   ab backfill-titles < map.json                   one-shot: {"<decision id>":"<title>"} sets the title on open cards that have
@@ -80,7 +88,8 @@
 // project-refresh uses the same lock and atomic replace on project.ts (lock project.ts.lock).
 // Env: AB_FILE (board.ts), AB_PROJECT_FILE (default project.ts next to AB_FILE), AB_URL (default
 // http://127.0.0.1:<ACTION_BOARD_PORT>), ACTION_BOARD_HOST and ACTION_BOARD_PORT (shell, then app/.env.local; defaults
-// board.localhost and 8085, used for AB_URL and the card footer), AB_NO_SERVER=1 (tests).
+// board.localhost and 8085, used for AB_URL and the card footer), AB_MAX_HIGH (open high cards allowed before check
+// flags a flood; positive integer, default 10), AB_NO_SERVER=1 (tests).
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -98,12 +107,13 @@ function setting(key) {
 const PORT = Number(setting("ACTION_BOARD_PORT")) || 8085;
 const HOST = (setting("ACTION_BOARD_HOST") || "board.localhost").toLowerCase();
 const URL_ = process.env.AB_URL || "http://127.0.0.1:" + PORT;
+const MAX_HIGH = Number(process.env.AB_MAX_HIGH ?? 10);
 const TOMB = path.join(APP_DIR, ".ab-cleared.jsonl");
 const LOG = path.join(APP_DIR, ".ab-log.jsonl");
 const A = "/* BOARD-JSON-START */", Z = "/* BOARD-JSON-END */";
 const PROJECT_FILE = process.env.AB_PROJECT_FILE || path.join(path.dirname(FILE), "project.ts");
 const PA = "/* PROJECT-JSON-START */", PZ = "/* PROJECT-JSON-END */";
-const ALLOWED = new Set(["id", "title", "card_ref", "context", "question", "what_happens_after", "details", "options", "multiSelect", "allowCustom", "priority", "blocking", "created_at"]);
+const ALLOWED = new Set(["id", "title", "card_ref", "context", "question", "what_happens_after", "details", "options", "multiSelect", "allowCustom", "priority", "blocking", "blocks", "created_at"]);
 // Priority: missing (or anything else in a hand-edited file) means medium.
 const PRIORITIES = ["high", "medium", "low"];
 const isPriority = (v) => typeof v === "string" && PRIORITIES.includes(v);
@@ -111,6 +121,9 @@ const priorityOf = (d) => (isPriority(d.priority) ? d.priority : "medium");
 // Blocking: true or false; a card raised before the field existed has none (null, unknown, never an error).
 const blockingOf = (d) => (typeof d.blocking === "boolean" ? d.blocking : null);
 const blockingError = (d) => d.blocking === true && d.priority !== "high" ? "blocking is true but priority is " + priorityOf(d) + "; blocking cards must be high (fix with ab priority " + d.id + " high)" : null;
+const BLOCKS_RULE = "a card is blocking only when a named piece of in-flight work (a specific open PR, merge or task being actively driven) cannot move until the user answers";
+const hasBlocks = (d) => typeof d.blocks === "string" && !!d.blocks.trim();
+const blocksError = (d) => d.blocking === true && !hasBlocks(d) ? "blocking is true but blocks is empty: name the in-flight work it holds up, or raise " + d.id + " again with blocking:false" : null;
 
 // Plain-words rules, shared by raise and lint. Each check returns an error that names the field, or null.
 // Ids say nothing on their own: URLs, ABC-1234, #123.
@@ -296,7 +309,9 @@ if (cmd === "raise") {
   if ("priority" in d && !isPriority(d.priority)) die(2, "priority must be high, medium or low");
   if (typeof d.blocking !== "boolean") die(2, "blocking is required: true if this card blocks a PR, merge, ticket or task, else false");
   if (d.blocking && "priority" in d && d.priority !== "high") die(2, "blocking cards are always high priority: drop priority or pass \"high\" (got \"" + d.priority + "\")");
-  if (d.blocking) d.priority = "high";
+  if (d.blocking && (!hasBlocks(d) || d.blocks.trim().length > 200)) die(2, "blocking:true needs \"blocks\" (1 to 200 chars) naming the work it blocks: " + BLOCKS_RULE);
+  if (!d.blocking && "blocks" in d) die(2, "blocks is only for blocking:true cards: " + BLOCKS_RULE);
+  if (d.blocking) { d.priority = "high"; d.blocks = d.blocks.trim(); }
   const problems = storedProblems(d);
   if (problems.length) die(2, problems.join("\nab: "));
   d.context = d.context.trim();
@@ -326,7 +341,7 @@ if (cmd === "raise") {
   console.log(JSON.stringify({ ok: true, board: "live", card: {
     title, context: d.context, question: d.question, ...(d.details ? { details: detailsText(d.details) } : {}), what_happens_after: d.what_happens_after,
     options: d.options.map((o) => o.label), multiSelect: !!d.multiSelect, allowCustom: d.allowCustom !== false,
-    link: d.card_ref, decision_id: d.id, priority: priorityOf(d), blocking: d.blocking,
+    link: d.card_ref, decision_id: d.id, priority: priorityOf(d), blocking: d.blocking, blocks: d.blocks ?? null,
     footer: "Also on your Action Board: http://" + HOST + ":" + PORT + " (" + d.id + ")" } }, null, 2));
 } else if (cmd === "answer") {
   const by = flag(args, "--by"), at = flag(args, "--at") || new Date().toISOString(), custom = flag(args, "--custom");
@@ -410,6 +425,7 @@ if (cmd === "raise") {
   console.log(JSON.stringify({ ok: true, live, counts: { waiting: g.waiting.length, tickets: g.tickets.length, others: others.length } }));
 } else if (cmd === "open" || cmd === "check") {
   const chatArg = flag(args, "--chat");
+  if (!Number.isInteger(MAX_HIGH) || MAX_HIGH < 1) die(2, "AB_MAX_HIGH must be a positive integer");
   const f = load(true);
   if (f.error) { console.log(JSON.stringify({ ok: false, open_on_board: null, served_open: null, counts: null, priority_open: null, open_priority: null, problems: [f.error] }, null, 2)); process.exit(1); }
   // Glance list sizes in the file; a missing list (older files have no others) counts 0.
@@ -417,10 +433,11 @@ if (cmd === "raise") {
   const fileB = f.b; const srv = await served();
   const fileOpen = fileB.decisions.filter(isOpen).map((d) => d.id);
   // Over open decisions only; a missing priority counts as medium.
-  const openPriority = fileB.decisions.filter(isOpen).map((d) => ({ id: d.id, priority: priorityOf(d), blocking: blockingOf(d) }));
+  const openPriority = fileB.decisions.filter(isOpen).map((d) => ({ id: d.id, priority: priorityOf(d), blocking: blockingOf(d), blocks: hasBlocks(d) ? d.blocks : null }));
   const priorityOpen = Object.fromEntries(PRIORITIES.map((p) => [p, openPriority.filter((x) => x.priority === p).length]));
   const srvOpen = srv ? srv.decisions.filter(isOpen).map((d) => d.id) : null;
-  const problems = fileB.decisions.filter(isOpen).map(blockingError).filter(Boolean);
+  const problems = fileB.decisions.filter(isOpen).flatMap((d) => [blockingError(d), blocksError(d)]).filter(Boolean);
+  if (priorityOpen.high > MAX_HIGH) problems.push(priorityOpen.high + " open cards are high (limit " + MAX_HIGH + "): a flood of high cards hides the real blockers");
   if (!process.env.AB_NO_SERVER) {
     if (!srv) problems.push("live board not reachable at " + URL_ + " (dev server down?)");
     else if (srv.updated_at !== fileB.updated_at) problems.push("served board is stale: file " + fileB.updated_at + " vs served " + srv.updated_at);
@@ -437,7 +454,7 @@ if (cmd === "raise") {
   console.log(JSON.stringify({ ok: problems.length === 0, open_on_board: fileOpen, served_open: srvOpen, counts, priority_open: priorityOpen, open_priority: openPriority, problems }, null, 2));
   if (cmd === "check" && problems.length) process.exit(1);
 } else if (cmd === "lint") {
-  const failing = load().b.decisions.filter(isOpen).map((d) => ({ id: d.id, problems: [...storedProblems(d), blockingError(d)].filter(Boolean) })).filter((x) => x.problems.length);
+  const failing = load().b.decisions.filter(isOpen).map((d) => ({ id: d.id, problems: [...storedProblems(d), blockingError(d), blocksError(d)].filter(Boolean) })).filter((x) => x.problems.length);
   console.log(JSON.stringify({ ok: failing.length === 0, failing }, null, 2));
   if (failing.length) process.exit(1);
 } else if (cmd === "backfill-stamps") {
