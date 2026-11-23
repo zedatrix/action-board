@@ -1,0 +1,1211 @@
+/* Self-hosted fonts, latin subset only. Plus Jakarta Sans is one variable file covering 500 to 600. */
+@font-face {
+  font-family: "Plus Jakarta Sans";
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url(/fonts/plus-jakarta-sans-latin.woff2) format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url(/fonts/ibm-plex-mono-latin-400.woff2) format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url(/fonts/ibm-plex-mono-latin-500.woff2) format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url(/fonts/ibm-plex-mono-latin-600.woff2) format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+:root {
+  --bg: #08080f;
+  --header: #0b0b14;
+  --side: #06060c;
+  --surface: #13131e;
+  --surface-2: #1b1b2a;
+  --border: #2c2c44;
+  --text: #f6f5fb;
+  --muted: #b4b2c4;
+  --quiet: #9a98ac;
+  --faint: #8c8aa0;
+  --cobalt: #4f7cff;
+  --fuchsia: #f24bff;
+  --ink: #0b0814;
+  --grad: linear-gradient(90deg, #4f7cff, #f24bff);
+  --warn-bg: #2a1e08;
+  --warn-line: #e0a23a;
+  --warn-text: #ffd38a;
+  /* Priority badge tones: fill, text, border. */
+  --high-bg: #3a1d1d;
+  --high-text: #ff8a6b;
+  --high-line: #ff6b4a;
+  --medium-bg: #3a2e12;
+  --medium-text: #f2c14e;
+  --medium-line: #c99a2e;
+  --low-bg: #1f2733;
+  --low-text: #8fa3b8;
+  --low-line: #5d7088;
+  --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  color-scheme: dark;
+  font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+  font-size: 16px;
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:focus-visible {
+  outline: 2px solid #8fa8ff;
+  outline-offset: 2px;
+}
+
+.page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Header: mono wordmark, markers, date, and a 3px gradient rule underneath. */
+.top {
+  min-height: 66px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px 22px;
+  padding: 12px 32px;
+  background: var(--header);
+  position: relative;
+}
+
+.top::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  background: var(--grad);
+}
+
+.wordmark {
+  font-family: var(--mono);
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.wordmark .dot {
+  width: 11px;
+  height: 11px;
+  border-radius: 99px;
+  background: var(--grad);
+  box-shadow: 0 0 0 4px rgba(79, 124, 255, 0.18);
+}
+
+.marker {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--warn-text);
+  background: var(--warn-bg);
+  border: 1px solid var(--warn-line);
+  border-radius: 8px;
+  padding: 6px 12px;
+}
+
+.top-meta {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--quiet);
+}
+
+.shell {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1.15fr 0.85fr;
+  min-height: 0;
+}
+
+.needs-you {
+  padding: 28px 32px 32px;
+  border-right: 1px solid var(--border);
+  min-width: 0;
+}
+
+.glance {
+  padding: 28px 26px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  background: var(--side);
+  min-width: 0;
+}
+
+@media (max-width: 1000px) {
+  .shell {
+    grid-template-columns: 1fr;
+  }
+  .needs-you {
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+}
+
+/* Section header: solid gradient fill, ink text, count chip. */
+.kicker {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink);
+  background: var(--grad);
+  border-radius: 11px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 16px;
+  margin-bottom: 22px;
+  width: fit-content;
+}
+
+.kicker .n {
+  letter-spacing: 0;
+  color: var(--text);
+  background: var(--ink);
+  border-radius: 6px;
+  padding: 0 8px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+}
+
+.empty {
+  color: var(--muted);
+  font-size: 15px;
+  border: 1px dashed var(--border);
+  border-radius: 16px;
+  padding: 26px 28px;
+}
+
+/* The queue: one section per priority level that has cards (High, Medium, Low), each with its own cards. */
+.queue {
+  display: flex;
+  flex-direction: column;
+  gap: 30px;
+}
+
+.queue-group {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* Level heading: the kicker's mono caps, smaller, tinted like the level's active priority segment. */
+.priority-heading {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  margin-bottom: 14px;
+  width: fit-content;
+}
+
+.priority-heading .n {
+  letter-spacing: 0;
+  color: var(--text);
+  background: var(--ink);
+  border-radius: 5px;
+  padding: 1px 7px;
+}
+
+.priority-section[data-level="high"] .priority-heading {
+  background: var(--high-bg);
+  color: var(--high-text);
+  border-color: var(--high-line);
+}
+
+.priority-section[data-level="medium"] .priority-heading {
+  background: var(--medium-bg);
+  color: var(--medium-text);
+  border-color: var(--medium-line);
+}
+
+.priority-section[data-level="low"] .priority-heading {
+  background: var(--low-bg);
+  color: var(--low-text);
+  border-color: var(--low-line);
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 26px 28px 24px;
+}
+
+/* Priority: a small segmented control in the card's top right, under the stamp. The active segment is the badge,
+   filled in its level's tone and always showing its label. Wraps instead of overflowing on narrow cards. */
+.priority {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.priority-seg {
+  appearance: none;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  min-height: 25px;
+  min-width: 44px;
+  padding: 5px 9px;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--quiet);
+  cursor: pointer;
+}
+
+.priority-seg:hover:not([aria-pressed="true"]) {
+  border-color: var(--quiet);
+  color: var(--text);
+}
+
+.priority-seg[aria-pressed="true"] {
+  cursor: default;
+}
+
+.priority-high[aria-pressed="true"] {
+  background: var(--high-bg);
+  color: var(--high-text);
+  border-color: var(--high-line);
+}
+
+.priority-medium[aria-pressed="true"] {
+  background: var(--medium-bg);
+  color: var(--medium-text);
+  border-color: var(--medium-line);
+}
+
+.priority-low[aria-pressed="true"] {
+  background: var(--low-bg);
+  color: var(--low-text);
+  border-color: var(--low-line);
+}
+
+.priority-error {
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.3;
+  color: var(--warn-text);
+}
+
+.card-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px 16px;
+  margin-bottom: 12px;
+}
+
+.idx {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  background: var(--grad);
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.question {
+  flex: 1 1 0;
+  min-width: 0;
+  font-size: 19.5px;
+  font-weight: 600;
+  line-height: 1.5;
+  letter-spacing: -0.025em;
+  text-wrap: pretty;
+}
+
+/* Right of the question row: the stamp, the priority control, "Explain this better" and the status lines,
+   stacked and right-aligned. Under 560px it drops to its own row below the question, lined up with the question
+   text, and its items flow and wrap (the Explain button goes below the control when both do not fit). */
+.card-meta {
+  flex-shrink: 0;
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  padding-top: 5px;
+  text-align: right;
+}
+
+@media (max-width: 560px) {
+  .card-meta {
+    flex-basis: 100%;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
+    padding: 0 0 0 44px;
+    text-align: left;
+  }
+  .card-meta .priority {
+    justify-content: flex-start;
+  }
+  .card-meta .clarify-status,
+  .card-meta .clarify-error,
+  .card-meta .priority-error {
+    flex-basis: 100%;
+  }
+}
+
+/* When the card came in ("added 9:14 AM", "updated Nov 12, 2:40 PM"). */
+.stamp {
+  padding-top: 2px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.2;
+  color: var(--quiet);
+  white-space: nowrap;
+}
+
+/* The card's short bold topic, first thing on the card. Full width: it sits above .card-top, so the meta column
+   does not share its row. */
+.card-title {
+  margin: 0 0 10px;
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+/* What the card is about, above the question: the first thing the user reads. */
+.context {
+  font-size: 15.5px;
+  line-height: 1.65;
+  color: var(--muted);
+  text-wrap: pretty;
+  padding-left: 14px;
+  border-left: 3px solid var(--cobalt);
+  margin-bottom: 16px;
+}
+
+.after {
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--muted);
+  margin: 0 0 18px 44px;
+}
+
+.after-label {
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* Optional details under the question: bullets and labeled lists. */
+.details {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--muted);
+  margin: 0 0 14px 44px;
+}
+
+.details-label {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+
+.details ul,
+.details ol {
+  padding-left: 20px;
+}
+
+.details li + li {
+  margin-top: 2px;
+}
+
+.options,
+.submit-row,
+.custom {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 16px 44px;
+}
+
+.btn {
+  appearance: none;
+  font-family: inherit;
+  font-size: 14.5px;
+  font-weight: 600;
+  min-height: 44px;
+  padding: 11px 20px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  background: var(--grad);
+  color: var(--ink);
+}
+
+.btn:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.btn.ghost {
+  background: var(--surface-2);
+  border-color: var(--border);
+  color: var(--text);
+  font-weight: 500;
+}
+
+.btn.ghost:hover {
+  filter: none;
+  border-color: var(--quiet);
+}
+
+/* Disabled: flat and dashed, text kept readable. */
+.btn:disabled {
+  cursor: not-allowed;
+  background: var(--surface-2);
+  border: 1px dashed var(--border);
+  color: var(--quiet);
+}
+
+/* Multi-select toggles: ghost when off, gradient fill with a checked box when on. */
+.btn.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--surface-2);
+  border-color: var(--border);
+  color: var(--text);
+  font-weight: 500;
+}
+
+.btn.toggle:hover {
+  filter: none;
+  border-color: var(--quiet);
+}
+
+.btn.toggle .box {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  border: 1.5px solid var(--quiet);
+  flex-shrink: 0;
+  position: relative;
+}
+
+.btn.toggle[aria-pressed="true"] {
+  background: var(--grad);
+  border-color: transparent;
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.btn.toggle[aria-pressed="true"] .box {
+  background: var(--ink);
+  border-color: var(--ink);
+}
+
+.btn.toggle[aria-pressed="true"] .box::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 1px;
+  width: 4px;
+  height: 8px;
+  border: solid var(--text);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+/* "Explain this better": a small ghost button with a sparkle in the card's top right corner,
+   smaller than the 44px answer buttons. Focus uses the global :focus-visible outline. */
+.clarify-btn {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.2;
+  white-space: nowrap;
+  min-height: 32px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.clarify-icon {
+  flex-shrink: 0;
+  fill: var(--cobalt);
+}
+
+.clarify-btn:hover:not(:disabled) {
+  border-color: var(--quiet);
+  background: #232336;
+}
+
+/* Disabled: flat and dashed like .btn:disabled. */
+.clarify-btn:disabled {
+  cursor: not-allowed;
+  border-style: dashed;
+  color: var(--quiet);
+}
+
+.clarify-btn:disabled .clarify-icon {
+  fill: currentColor;
+}
+
+.clarify-status,
+.clarify-error {
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.3;
+  color: var(--quiet);
+}
+
+.clarify-error {
+  color: var(--warn-text);
+}
+
+.hint {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--quiet);
+}
+
+.custom-input {
+  flex: 1;
+  min-width: 220px;
+  max-width: 460px;
+  min-height: 44px;
+  font-family: inherit;
+  font-size: 15px;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 14px;
+}
+
+.custom-input::placeholder {
+  color: var(--quiet);
+}
+
+.custom-input:focus-visible {
+  outline: 2px solid #8fa8ff;
+  outline-offset: 0;
+  border-color: transparent;
+}
+
+.evidence {
+  margin-left: 44px;
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--quiet);
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.evidence::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--grad);
+}
+
+/* Card footer: the evidence link on the left, "Not relevant anymore" at the bottom right. Wraps on narrow cards;
+   the right group keeps to the right even without an evidence link. */
+.card-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  margin-left: 44px;
+}
+
+.card-foot .evidence {
+  margin-left: 0;
+  min-width: 0;
+}
+
+.not-relevant {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px 12px;
+  margin-left: auto;
+}
+
+/* A quiet, link-style secondary control. Focus uses the global :focus-visible outline. */
+.not-relevant-btn {
+  appearance: none;
+  font-family: inherit;
+  font-size: 12.5px;
+  line-height: 1.3;
+  white-space: nowrap;
+  padding: 4px 2px;
+  border: 0;
+  background: transparent;
+  color: var(--quiet);
+  cursor: pointer;
+}
+
+.not-relevant-btn:hover:not(:disabled) {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.not-relevant-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.not-relevant-status,
+.not-relevant-error {
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.3;
+  color: var(--quiet);
+}
+
+.not-relevant-error {
+  color: var(--warn-text);
+}
+
+/* URLs on a card: cobalt with a soft underline so they read as clickable. */
+.card-link,
+a.evidence {
+  color: var(--cobalt);
+  text-decoration: underline;
+  text-decoration-color: rgba(79, 124, 255, 0.45);
+  text-underline-offset: 3px;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.card-link:hover,
+a.evidence:hover {
+  color: #8fa8ff;
+  text-decoration-color: currentColor;
+}
+
+.queue-end {
+  margin-top: 22px;
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--faint);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.queue-end::before,
+.queue-end::after {
+  content: "";
+  height: 1px;
+  flex: 1;
+  background: var(--border);
+}
+
+/* Glance panels: gradient header band, hairline lines. */
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 0 0 10px;
+  overflow: hidden;
+}
+
+.panel h3 {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink);
+  background: var(--grad);
+  padding: 12px 18px;
+  margin: 0 0 6px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.panel h3 .n {
+  letter-spacing: 0;
+  color: var(--text);
+  background: var(--ink);
+  border-radius: 5px;
+  padding: 1px 7px;
+}
+
+.panel ul {
+  list-style: none;
+}
+
+.panel li + li {
+  border-top: 1px solid var(--border);
+}
+
+.panel-empty {
+  padding: 12px 18px;
+  font-size: 15px;
+  color: var(--muted);
+}
+
+/* A glance row: the item (link) and its Message the assistant button side by side; status and composer underneath. */
+.panel li.row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+/* A long assistant name wraps onto two lines here instead of squeezing the item's title. */
+.panel li.row .msg-btn {
+  margin: 6px 12px 6px 0;
+  max-width: 164px;
+  white-space: normal;
+  line-height: 1.25;
+  text-align: left;
+}
+
+.panel li.row .meta {
+  max-width: 180px;
+}
+
+.panel li.row .msg-status,
+.panel li.row .composer {
+  grid-column: 1 / -1;
+  margin: 0 18px 12px;
+}
+
+.item {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 14px;
+  align-items: center;
+  min-height: 46px;
+  padding: 12px 18px;
+  text-decoration: none;
+  color: inherit;
+}
+
+a.item:hover {
+  background: var(--surface-2);
+}
+
+.item .title {
+  font-size: 15px;
+  line-height: 1.45;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.item .meta {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--muted);
+  white-space: nowrap;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.item .status {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink);
+  background: var(--cobalt);
+  padding: 4px 9px;
+  border-radius: 5px;
+  white-space: nowrap;
+  text-transform: lowercase;
+}
+
+.item .status.review {
+  background: var(--fuchsia);
+}
+
+.tid {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--quiet);
+  margin-right: 10px;
+}
+
+/* Message the assistant: dark button with a cobalt-to-fuchsia border, filled with the gradient on hover. */
+.msg-btn {
+  appearance: none;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  min-height: 44px;
+  padding: 0 14px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  background: linear-gradient(var(--surface-2), var(--surface-2)) padding-box, var(--grad) border-box;
+  color: var(--text);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.msg-btn::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 99px;
+  background: var(--grad);
+  flex-shrink: 0;
+}
+
+.msg-btn:hover,
+.msg-btn[aria-expanded="true"] {
+  background: var(--grad) border-box;
+  color: var(--ink);
+}
+
+.msg-btn:hover::before,
+.msg-btn[aria-expanded="true"]::before {
+  background: var(--ink);
+}
+
+.msg-status {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.msg-status.delivered::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--grad);
+  flex-shrink: 0;
+}
+
+.msg-status.failed {
+  color: var(--warn-text);
+}
+
+.composer {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.composer-input {
+  width: 100%;
+  min-height: 76px;
+  resize: vertical;
+  font-family: inherit;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 14px;
+}
+
+.composer-input::placeholder {
+  color: var(--quiet);
+}
+
+.composer-input:focus-visible {
+  outline: 2px solid #8fa8ff;
+  outline-offset: 0;
+  border-color: transparent;
+}
+
+.composer-input[readonly] {
+  color: var(--muted);
+}
+
+.composer-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.footer {
+  min-height: 36px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--faint);
+}
+
+.toasts {
+  position: fixed;
+  right: 24px;
+  bottom: 52px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 18px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+}
+
+.toast::before {
+  content: "";
+  width: 10px;
+  height: 10px;
+  border-radius: 99px;
+  background: var(--grad);
+  flex-shrink: 0;
+}
+
+/* Tabs above the page: Board and the project tab. The selected tab gets the gradient underline. */
+.tabs {
+  height: 44px;
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  padding: 0 32px;
+  background: var(--side);
+  border-bottom: 1px solid var(--border);
+}
+
+.tab {
+  appearance: none;
+  border: 0;
+  background: none;
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  padding: 0 14px;
+  cursor: pointer;
+  position: relative;
+  white-space: nowrap;
+}
+
+.tab:hover {
+  color: var(--text);
+}
+
+.tab[aria-selected="true"] {
+  color: var(--text);
+}
+
+.tab[aria-selected="true"]::after {
+  content: "";
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: -1px;
+  height: 3px;
+  border-radius: 3px 3px 0 0;
+  background: var(--grad);
+}
+
+/* The board page fills the window below the tab bar, as it filled the window before. */
+.tabpanel > .page {
+  min-height: calc(100vh - 44px);
+}
+
+/* Project tab: one table, numbers right-aligned in tabular figures. */
+.project {
+  padding: 28px 32px 32px;
+  max-width: 920px;
+}
+
+.project-note {
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.6;
+  margin: -8px 0 18px;
+}
+
+.project-note a {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--quiet);
+}
+
+.project-wrap {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  overflow-x: auto;
+}
+
+.project-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 15px;
+}
+
+.project-table th,
+.project-table td {
+  padding: 11px 16px;
+  text-align: left;
+  border-top: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.project-table thead th {
+  border-top: 0;
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--quiet);
+  vertical-align: bottom;
+}
+
+.project-table tbody th {
+  font-weight: 400;
+}
+
+.project-table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.project-table a {
+  color: inherit;
+  text-decoration: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 10px;
+}
+
+.project-table a:hover .project-name {
+  text-decoration: underline;
+}
+
+.project-id {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--quiet);
+}
+
+.project-total th,
+.project-total td {
+  font-weight: 700;
+  border-top: 2px solid var(--border);
+  background: var(--surface-2);
+}
+
+@media (max-width: 560px) {
+  .tabs {
+    padding: 0 12px;
+  }
+  .project {
+    padding: 20px 12px 24px;
+  }
+  .project-table {
+    font-size: 14px;
+  }
+  .project-table th,
+  .project-table td {
+    padding: 10px 8px;
+  }
+  .project-table thead th {
+    font-size: 11px;
+    letter-spacing: 0.02em;
+    white-space: normal;
+  }
+}

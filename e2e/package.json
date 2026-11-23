@@ -1,0 +1,11 @@
+{
+  "name": "action-board-e2e",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "local": "node local-e2e.mjs"
+  },
+  "dependencies": {
+    "puppeteer-core": "^24.43.1"
+  }
+}

@@ -1,0 +1,22 @@
+# Dependencies and builds
+node_modules/
+dist/
+.vite/
+
+# Secrets: app/.env.local holds the webhook URL and auth
+.env.local
+.env.*.local
+.env*.bak
+
+# Logs and runtime files (delivery log, ab log, tombstones, lock dirs)
+*.log
+*.jsonl
+*.lock
+
+# Local output: e2e screenshots and runs, board backups
+runs/
+backups/
+screenshots/
+*.png
+
+.DS_Store
