@@ -367,7 +367,7 @@ BL=',"blocks":"PR #1461 hired application guard merge"'
 BK() { echo '{"id":"'"$1"'","title":"Blocking card '"$1"'","context":"Blocking test card standing in for a merge that waits on a call from the user.","question":"Merge the blocking test card?","what_happens_after":"A.","options":[{"id":"a","label":"A"}]'"${2:-}"'}'; }
 cp "$AB_FILE" "$T/bk.before"
 t 2 "blocking: raise without it refused"      node "$AB" raise "$(BK t-b-none)"
-t 0 "  ...error says what blocking means"     bash -c "node '$AB' raise '$(BK t-b-none)' 2>&1 | grep -qxF 'ab: blocking is required: true if this card blocks a PR, merge, ticket or task, else false'"
+t 0 "  ...error says what blocking means"     bash -c "node '$AB' raise '$(BK t-b-none)' 2>&1 | grep -qxF 'ab: blocking is required: true only if a named open PR, merge or task cannot move until this is answered, and then blocks names it; else false'"
 for bad in 'null' '"true"' '1' '"yes"' '[]'; do
   t 2 "blocking: $bad refused"                node "$AB" raise "$(BK t-b-bad ',"blocking":'"$bad")"
 done

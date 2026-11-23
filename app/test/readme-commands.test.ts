@@ -183,7 +183,7 @@ describe("README ab.mjs commands", () => {
       [{ ...raiseJson, title: "a".repeat(61) }, /^ab: title is 61 chars; keep it to 60 or fewer/],
       [{ ...raiseJson, title: "Q3 vendor\ncontract renewal" }, /^ab: title must be one line/],
       [{ ...raiseJson, title: 1461 }, /^ab: title is required/],
-      [{ ...raiseJson, blocking: undefined }, /^ab: blocking is required: true if this card blocks a PR, merge, ticket or task, else false$/m],
+      [{ ...raiseJson, blocking: undefined }, /^ab: blocking is required: true only if a named open PR, merge or task cannot move until this is answered, and then blocks names it; else false$/m],
       [{ ...raiseJson, blocking: "yes" }, /^ab: blocking is required/],
       [{ ...raiseJson, blocking: true, blocks: "Signing the Q3 hosting contract", priority: "medium" }, /^ab: blocking cards are always high priority/],
       [{ ...raiseJson, blocking: true, blocks: "Signing the Q3 hosting contract", priority: "low" }, /^ab: blocking cards are always high priority/],

@@ -307,7 +307,7 @@ if (cmd === "raise") {
   for (const k of ["multiSelect", "allowCustom"]) if (k in d && typeof d[k] !== "boolean") die(2, k + " must be true or false");
   if ("details" in d) { const e = detailsError(d.details); if (e) die(2, e); }
   if ("priority" in d && !isPriority(d.priority)) die(2, "priority must be high, medium or low");
-  if (typeof d.blocking !== "boolean") die(2, "blocking is required: true if this card blocks a PR, merge, ticket or task, else false");
+  if (typeof d.blocking !== "boolean") die(2, "blocking is required: true only if a named open PR, merge or task cannot move until this is answered, and then blocks names it; else false");
   if (d.blocking && "priority" in d && d.priority !== "high") die(2, "blocking cards are always high priority: drop priority or pass \"high\" (got \"" + d.priority + "\")");
   if (d.blocking && (!hasBlocks(d) || d.blocks.trim().length > 200)) die(2, "blocking:true needs \"blocks\" (1 to 200 chars) naming the work it blocks: " + BLOCKS_RULE);
   if (!d.blocking && "blocks" in d) die(2, "blocks is only for blocking:true cards: " + BLOCKS_RULE);
