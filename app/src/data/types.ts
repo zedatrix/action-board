@@ -37,6 +37,11 @@ export type Decision = {
   allowCustom?: boolean;
   // How much it matters; sorts the Needs you queue. Missing means medium. Set by ab raise or ab priority.
   priority?: Priority;
+  // true: named in-flight work (an open PR, merge or task) cannot move until the user answers, so ab keeps it high.
+  // ab raise requires it; older cards lack it (unknown).
+  blocking?: boolean;
+  // The in-flight work a blocking card holds up; ab raise requires it with blocking:true and refuses it otherwise.
+  blocks?: string;
   created_at: string;
   // Last raise or answer (ISO UTC), set by ab; equals created_at until the card changes. Older cards lack it.
   updated_at?: string;

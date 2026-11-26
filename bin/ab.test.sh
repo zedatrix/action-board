@@ -9,7 +9,8 @@ unset AB_URL ACTION_BOARD_HOST ACTION_BOARD_PORT
 export AB_FILE="$T/app/src/data/board.ts" AB_PROJECT_FILE="$T/app/src/data/project.ts" AB_NO_SERVER=1
 pass=0; fail=0
 t() { local want=$1; shift; local name=$1; shift; out=$("$@" 2>&1); got=$?; if [ "$got" = "$want" ]; then pass=$((pass+1)); echo "PASS $name"; else fail=$((fail+1)); echo "FAIL $name (exit $got, want $want): $out"; fi; }
-CTX='"context":"Test card for the ab checks, standing in for a real ticket that needs a call."'
+# Every raise must say whether the card blocks something; test cards built on CTX block nothing.
+CTX='"context":"Test card for the ab checks, standing in for a real ticket that needs a call.","blocking":false'
 D='{"id":"t-one","title":"Test one",'"$CTX"',"question":"Q?","what_happens_after":"A.","options":[{"id":"a","label":"A"},{"id":"b","label":"B"}],"link":"https://example.com/pr/1"}'
 t 0 "raise prints card"            node "$AB" raise "$D"
 t 0 "card has title+footer"        bash -c "node '$AB' raise '$D' | grep -qF 'Also on your Action Board: http://board.localhost:8085 (t-one)' "
@@ -100,7 +101,7 @@ done
 t 0 "details refusal says why"     bash -c "node '$AB' raise '$(dec t-bad '[{"label":"L","items":["x"],"extra":1}]')' 2>&1 | grep -q 'details\[0\] has unknown key extra'"
 t 0 "details refusals leave board.ts unchanged"  test "$(cksum < "$AB_FILE")" = "$SUM"
 # Plain words: context required, no vague question, title more than an id. Refusals exit 2 and leave board.ts alone.
-OLD='{"id":"proj5054-old","title":"PROJ-5054","question":"What should happen to the ticket?","what_happens_after":"Ellis acts on your pick.","options":[{"id":"cancel","label":"Cancel"}]}'
+OLD='{"id":"proj5054-old","title":"PROJ-5054","question":"What should happen to the ticket?","what_happens_after":"Ellis acts on your pick.","options":[{"id":"cancel","label":"Cancel"}],"blocking":false}'
 GOODCTX='"context":"Ticket PROJ-5054 asks for a required asterisk on the Address field of the employee emergency contact form. Product (Quinlan) says Address is optional, so the ticket asks for something product does not want."'
 withctx() { echo "$OLD" | sed "s/\"question\"/$GOODCTX,\"question\"/"; }
 SUM=$(cksum < "$AB_FILE")
@@ -148,7 +149,7 @@ t 1 "lint: card with no title fails before backfill"  node "$AB" lint
 t 0 "backfill-titles fixes it"              bash -c "echo '{\"l-notitle\":\"Address asterisk ticket\"}' | node '$AB' backfill-titles >/dev/null"
 t 0 "  ...and lint exits 0 after"           node "$AB" lint
 # Concurrency: 20 raises + 20 glances at once must not corrupt board.ts or lose a raise.
-R='"context":"Concurrency test card standing in for a real ticket that needs a call.","question":"Ship the concurrency test card?","what_happens_after":"Nothing happens.","options":[{"id":"a","label":"A"}]'
+R='"context":"Concurrency test card standing in for a real ticket that needs a call.","question":"Ship the concurrency test card?","what_happens_after":"Nothing happens.","options":[{"id":"a","label":"A"}],"blocking":false'
 pids=()
 for n in $(seq 1 20); do
   node "$AB" raise '{"id":"t-race-'$n'","title":"Race card '$n'",'"$R"'}' >/dev/null 2>&1 & pids+=($!)
@@ -202,9 +203,9 @@ t 0 "  ...board.ts unchanged"               test "$(cksum < "$AB_FILE")" = "$SUM
 # created_at kept (even when the re-raise passes one), updated_at moved to now, stored and printed card have the new title.
 dx() { node -e 'const s=require("fs").readFileSync(process.env.AB_FILE,"utf8");const A="/* BOARD-JSON-START */";const ds=JSON.parse(s.slice(s.indexOf(A)+A.length,s.indexOf("/* BOARD-JSON-END */"))).decisions;const i=ds.findIndex(x=>x.id===process.argv[1]);console.log(JSON.stringify({n:ds.filter(x=>x.id===process.argv[1]).length,i,d:ds[i]}))' "$1"; }
 IPCTX='"context":"In place test card standing in for a real ticket that needs a call."'
-IP1='{"id":"t-inplace","title":"In place card",'"$IPCTX"',"question":"Ship the in place test card?","what_happens_after":"The assistant ships it.","options":[{"id":"go","label":"Go"},{"id":"hold","label":"Hold"}]}'
-IP2='{"id":"t-inplace","title":"Reworded in place card","context":"Reworded context for the in place card, now saying plainly what changed and why.","question":"Ship the reworded in place test card today?","what_happens_after":"The assistant ships it today and posts a note.","options":[{"id":"go","label":"Ship it today"},{"id":"hold","label":"Hold until Monday"}],"created_at":"2020-01-01T00:00:00.000Z"}'
-nb() { echo '{"id":"'"$1"'","title":"In place neighbour '"$1"'",'"$IPCTX"',"question":"Ship the neighbour test card?","what_happens_after":"A.","options":[{"id":"a","label":"A"}]}'; }
+IP1='{"id":"t-inplace","title":"In place card",'"$IPCTX"',"question":"Ship the in place test card?","what_happens_after":"The assistant ships it.","options":[{"id":"go","label":"Go"},{"id":"hold","label":"Hold"}],"blocking":false}'
+IP2='{"id":"t-inplace","title":"Reworded in place card","context":"Reworded context for the in place card, now saying plainly what changed and why.","question":"Ship the reworded in place test card today?","what_happens_after":"The assistant ships it today and posts a note.","options":[{"id":"go","label":"Ship it today"},{"id":"hold","label":"Hold until Monday"}],"blocking":false,"created_at":"2020-01-01T00:00:00.000Z"}'
+nb() { echo '{"id":"'"$1"'","title":"In place neighbour '"$1"'",'"$IPCTX"',"question":"Ship the neighbour test card?","what_happens_after":"A.","options":[{"id":"a","label":"A"}],"blocking":false}'; }
 t 0 "in place: raise a card between two others"  bash -c "node '$AB' raise '$(nb t-inplace-before)' >/dev/null && node '$AB' raise '$IP1' >/dev/null && node '$AB' raise '$(nb t-inplace-after)' >/dev/null"
 B0=$(dx t-inplace)
 t 0 "in place: re-raise with new title, text, labels, same option ids"  bash -c "node '$AB' raise '$IP2' > '$T/ip-card.json'"
@@ -354,11 +355,96 @@ t 0 "ab priority refusals leave board.ts unchanged"  test "$(cksum < "$AB_FILE")
 # open/check: open cards only (t-p-medium is answered), a missing priority counts as medium.
 seed "[{\"id\":\"o-none\",$ok,\"question\":\"Ship the invoice export?\",$base},{\"id\":\"o-high\",$ok,\"question\":\"Ship the CRM sync?\",$base,\"priority\":\"high\"},{\"id\":\"o-low\",$ok,\"question\":\"Ship the billing banner?\",$base,\"priority\":\"low\"},{\"id\":\"o-low2\",$ok,\"question\":\"Ship the chat alerts?\",$base,\"priority\":\"low\"},{\"id\":\"o-ans\",$ok,\"question\":\"Ship the audit log?\",$base,\"priority\":\"high\",$ans}]"
 popen() { node "$AB" "$1" | node -e 'const r=JSON.parse(require("fs").readFileSync(0,"utf8"));console.log(JSON.stringify([r.priority_open,r.open_priority]))'; }
-WANT='[{"high":1,"medium":1,"low":2},[{"id":"o-none","priority":"medium"},{"id":"o-high","priority":"high"},{"id":"o-low","priority":"low"},{"id":"o-low2","priority":"low"}]]'
+WANT='[{"high":1,"medium":1,"low":2},[{"id":"o-none","priority":"medium","blocking":null,"blocks":null},{"id":"o-high","priority":"high","blocking":null,"blocks":null},{"id":"o-low","priority":"low","blocking":null,"blocks":null},{"id":"o-low2","priority":"low","blocking":null,"blocks":null}]]'
 t 0 "open: priority_open and open_priority"   test "$(popen open)" = "$WANT"
 t 0 "check: priority_open and open_priority"  test "$(popen check)" = "$WANT"
 C2="$T/c2/app/src/data/board.ts"; mkdir -p "$(dirname "$C2")"; cp "$AB_FILE" "$C2"; tail -c 300 "$AB_FILE" >> "$C2"
 t 0 "corrupt board: priority_open and open_priority are null"  bash -c "AB_FILE='$C2' node '$AB' open | node -e 'const r=JSON.parse(require(\"fs\").readFileSync(0,\"utf8\"));if(r.counts!==null||r.priority_open!==null||r.open_priority!==null)process.exit(1)'"
+# Blocking: raise requires a boolean blocking; true forces high (a passed medium or low is refused, a re-raise upgrades).
+# ab priority keeps a blocking card high. check and lint flag an open blocking card that is not high; no blocking = unknown.
+seed "[]"
+BL=',"blocks":"PR #1461 hired application guard merge"'
+BK() { echo '{"id":"'"$1"'","title":"Blocking card '"$1"'","context":"Blocking test card standing in for a merge that waits on a call from the user.","question":"Merge the blocking test card?","what_happens_after":"A.","options":[{"id":"a","label":"A"}]'"${2:-}"'}'; }
+cp "$AB_FILE" "$T/bk.before"
+t 2 "blocking: raise without it refused"      node "$AB" raise "$(BK t-b-none)"
+t 0 "  ...error says what blocking means"     bash -c "node '$AB' raise '$(BK t-b-none)' 2>&1 | grep -qxF 'ab: blocking is required: true only if a named open PR, merge or task cannot move until this is answered, and then blocks names it; else false'"
+for bad in 'null' '"true"' '1' '"yes"' '[]'; do
+  t 2 "blocking: $bad refused"                node "$AB" raise "$(BK t-b-bad ',"blocking":'"$bad")"
+done
+t 2 "blocking:true with priority medium refused"  node "$AB" raise "$(BK t-b-med ',"blocking":true,"priority":"medium"'"$BL")"
+t 2 "blocking:true with priority low refused"     node "$AB" raise "$(BK t-b-low ',"blocking":true,"priority":"low"'"$BL")"
+t 0 "  ...error says blocking cards are high"     bash -c "node '$AB' raise '$(BK t-b-low ',"blocking":true,"priority":"low"'"$BL")' 2>&1 | grep -q '^ab: blocking cards are always high priority'"
+t 0 "  ...blocking refusals leave board.ts byte-identical"  cmp -s "$AB_FILE" "$T/bk.before"
+t 0 "blocking:true without priority raised"   bash -c "node '$AB' raise '$(BK t-b-real ',"blocking":true'"$BL")' > '$T/bk-card.json'"
+t 0 "  ...stored high (was medium before blocking existed)"  [ "$(dget t-b-real priority) $(dget t-b-real blocking)" = "high true" ]
+t 0 "  ...printed card says high and blocking"  node -e 'const c=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).card;if(c.priority!=="high"||c.blocking!==true)process.exit(1)' "$T/bk-card.json"
+t 0 "blocking:true with priority high raised" node "$AB" raise "$(BK t-b-high ',"blocking":true,"priority":"high"'"$BL")"
+t 0 "  ...stored high"                        [ "$(dget t-b-high priority)" = high ]
+t 0 "blocking:false without priority raised"  bash -c "node '$AB' raise '$(BK t-b-free ',"blocking":false')' | grep -q '\"blocking\": false'"
+t 0 "  ...no priority stored, blocking false" [ "$(dget t-b-free priority) $(dget t-b-free blocking)" = "absent false" ]
+t 0 "re-raise blocking:true of a medium card" bash -c "node '$AB' raise '$(BK t-b-free ',"blocking":false,"priority":"medium"')' >/dev/null && node '$AB' raise '$(BK t-b-free ',"blocking":true'"$BL")' >/dev/null"
+t 0 "  ...upgraded to high"                   [ "$(dget t-b-free priority) $(dget t-b-free blocking)" = "high true" ]
+t 0 "re-raise blocking:false without priority" node "$AB" raise "$(BK t-b-high ',"blocking":false')"
+t 0 "  ...keeps the stored high"              [ "$(dget t-b-high priority) $(dget t-b-high blocking)" = "high false" ]
+cp "$AB_FILE" "$T/bk.before"
+t 2 "ab priority low on a blocking card refused"     node "$AB" priority t-b-real low
+t 2 "ab priority medium on a blocking card refused"  node "$AB" priority t-b-real medium
+t 0 "  ...says blocking cards stay high"      bash -c "node '$AB' priority t-b-real low 2>&1 | grep -qxF 'ab: t-b-real is a blocking card; blocking cards stay high'"
+t 0 "  ...board.ts byte-identical"            cmp -s "$AB_FILE" "$T/bk.before"
+t 0 "ab priority high on a blocking card is fine"    node "$AB" priority t-b-real high
+t 0 "ab priority low on a card no longer blocking"   node "$AB" priority t-b-high low
+KQ="$tt,$ok,\"question\":\"Close the Address asterisk ticket?\",$base"
+KS="{\"id\":\"k-old\",$KQ},{\"id\":\"k-ok\",$KQ,\"blocking\":true,\"priority\":\"high\"$BL},{\"id\":\"k-free\",$KQ,\"blocking\":false,\"priority\":\"low\"},{\"id\":\"k-ans\",$KQ,\"blocking\":true,\"priority\":\"low\",$ans}"
+seed "[$KS]"
+t 0 "check: old card without blocking passes" node "$AB" check
+t 0 "lint: old card without blocking passes"  node "$AB" lint
+t 0 "open lists blocking per open card (null when unknown)"  [ "$(node "$AB" open | node -e 'console.log(JSON.stringify(JSON.parse(require("fs").readFileSync(0,"utf8")).open_priority))')" = '[{"id":"k-old","priority":"medium","blocking":null,"blocks":null},{"id":"k-ok","priority":"high","blocking":true,"blocks":"PR #1461 hired application guard merge"},{"id":"k-free","priority":"low","blocking":false,"blocks":null}]' ]
+seed "[$KS,{\"id\":\"k-bad\",$KQ,\"blocking\":true,\"priority\":\"medium\"$BL},{\"id\":\"k-nopri\",$KQ,\"blocking\":true$BL}]"
+t 1 "check: hand-edited blocking card at medium flagged"  node "$AB" check
+t 0 "  ...problems name both cards"           bash -c "node '$AB' check | node -e 'const r=JSON.parse(require(\"fs\").readFileSync(0,\"utf8\"));if(JSON.stringify(r.problems)!==JSON.stringify([\"blocking is true but priority is medium; blocking cards must be high (fix with ab priority k-bad high)\",\"blocking is true but priority is medium; blocking cards must be high (fix with ab priority k-nopri high)\"]))process.exit(1)'"
+t 1 "lint: hand-edited blocking card at medium flagged"   node "$AB" lint
+t 0 "  ...k-bad and k-nopri fail, old, high, free and answered do not"  [ "$(node "$AB" lint | node -e 'console.log(JSON.parse(require("fs").readFileSync(0,"utf8")).failing.map(x=>x.id).join())')" = "k-bad,k-nopri" ]
+# Blocks: a blocking card names the in-flight work it holds up. raise requires it with blocking:true (1 to 200 chars after
+# trim) and refuses it with blocking:false; a re-raise with blocking:false drops it. check and lint flag a blocking card
+# without it. check also flags more than AB_MAX_HIGH (default 10) open high cards.
+seed "[]"
+cp "$AB_FILE" "$T/bs.before"
+t 2 "blocks: blocking:true without blocks refused"   node "$AB" raise "$(BK t-s-none ',"blocking":true')"
+t 0 "  ...error names the definition in one line"    bash -c "node '$AB' raise '$(BK t-s-none ',"blocking":true')' 2>&1 | grep -qxF 'ab: blocking:true needs \"blocks\" (1 to 200 chars) naming the work it blocks: a card is blocking only when a named piece of in-flight work (a specific open PR, merge or task being actively driven) cannot move until the user answers'"
+for bad in '""' '"   "' '1461' '"'"$(printf 'x%.0s' $(seq 201))"'"'; do
+  t 2 "blocks: ${bad:0:12} refused"                  node "$AB" raise "$(BK t-s-bad ',"blocking":true,"blocks":'"$bad")"
+  t 0 "  ...says blocks needs 1 to 200 chars"        bash -c "node '$AB' raise '$(BK t-s-bad ',"blocking":true,"blocks":'"$bad")' 2>&1 | grep -q '^ab: blocking:true needs \"blocks\" (1 to 200 chars)'"
+done
+t 2 "blocks with blocking:false refused"             node "$AB" raise "$(BK t-s-free ',"blocking":false'"$BL")"
+t 0 "  ...error says blocks is only for blocking cards"  bash -c "node '$AB' raise '$(BK t-s-free ',"blocking":false'"$BL")' 2>&1 | grep -q '^ab: blocks is only for blocking:true cards: a card is blocking only when'"
+t 0 "  ...blocks refusals leave board.ts byte-identical"  cmp -s "$AB_FILE" "$T/bs.before"
+t 0 "blocks: 200 chars with padding raised"          node "$AB" raise "$(BK t-s-max ',"blocking":true,"blocks":"  '"$(printf 'y%.0s' $(seq 200))"'  "')"
+t 0 "  ...stored trimmed"                            [ "$(dget t-s-max blocks)" = "$(printf 'y%.0s' $(seq 200))" ]
+t 0 "blocks: valid blocking raise"                   bash -c "node '$AB' raise '$(BK t-s-ok ',"blocking":true,"blocks":" PR #1461 hired application guard merge "')' > '$T/bs-card.json'"
+t 0 "  ...stored on the card"                        [ "$(dget t-s-ok blocks)" = "PR #1461 hired application guard merge" ]
+t 0 "  ...printed on the card"                       node -e 'const c=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).card;if(c.blocks!=="PR #1461 hired application guard merge")process.exit(1)' "$T/bs-card.json"
+t 0 "  ...listed in open"                            [ "$(node "$AB" open | node -e 'console.log(JSON.parse(require("fs").readFileSync(0,"utf8")).open_priority.find(x=>x.id==="t-s-ok").blocks)')" = "PR #1461 hired application guard merge" ]
+t 0 "blocking:false raise prints blocks null"        bash -c "node '$AB' raise '$(BK t-s-plain ',"blocking":false')' | grep -q '\"blocks\": null'"
+t 0 "re-raise blocking:false drops blocks"           node "$AB" raise "$(BK t-s-ok ',"blocking":false')"
+t 0 "  ...blocks gone, blocking false"               [ "$(dget t-s-ok blocks) $(dget t-s-ok blocking)" = "absent false" ]
+t 0 "  ...open shows blocks null"                    [ "$(node "$AB" open | node -e 'console.log(JSON.parse(require("fs").readFileSync(0,"utf8")).open_priority.find(x=>x.id==="t-s-ok").blocks)')" = "null" ]
+seed "[$KS,{\"id\":\"k-noblk\",$KQ,\"blocking\":true,\"priority\":\"high\"},{\"id\":\"k-blank\",$KQ,\"blocking\":true,\"priority\":\"high\",\"blocks\":\"  \"}]"
+t 1 "check: hand-edited blocking card without blocks flagged"  node "$AB" check
+t 0 "  ...problems name both cards"                  bash -c "node '$AB' check | node -e 'const r=JSON.parse(require(\"fs\").readFileSync(0,\"utf8\"));if(JSON.stringify(r.problems)!==JSON.stringify([\"blocking is true but blocks is empty: name the in-flight work it holds up, or raise k-noblk again with blocking:false\",\"blocking is true but blocks is empty: name the in-flight work it holds up, or raise k-blank again with blocking:false\"]))process.exit(1)'"
+t 1 "lint: hand-edited blocking card without blocks flagged"   node "$AB" lint
+t 0 "  ...only k-noblk and k-blank fail"             [ "$(node "$AB" lint | node -e 'console.log(JSON.parse(require("fs").readFileSync(0,"utf8")).failing.map(x=>x.id).join())')" = "k-noblk,k-blank" ]
+hs() { local n=$1 out="" i; for i in $(seq "$n"); do out="$out{\"id\":\"h-$i\",$KQ,\"priority\":\"high\"},"; done; echo "[$out{\"id\":\"h-low\",$KQ,\"priority\":\"low\"},{\"id\":\"h-ans\",$KQ,\"priority\":\"high\",$ans}]"; }
+seed "$(hs 10)"
+t 0 "check: 10 open high cards pass"                 node "$AB" check
+seed "$(hs 11)"
+t 1 "check: 11 open high cards flagged"              node "$AB" check
+t 0 "  ...says so"                                   bash -c "node '$AB' check | node -e 'const r=JSON.parse(require(\"fs\").readFileSync(0,\"utf8\"));if(JSON.stringify(r.problems)!==JSON.stringify([\"11 open cards are high (limit 10): a flood of high cards hides the real blockers\"]))process.exit(1)'"
+t 0 "  ...lint does not count high cards"            node "$AB" lint
+t 0 "AB_MAX_HIGH=20 lets 11 pass"                    env AB_MAX_HIGH=20 node "$AB" check
+t 1 "AB_MAX_HIGH=5 flags 11"                         env AB_MAX_HIGH=5 node "$AB" check
+for bad in 0 -3 1.5 ten ""; do
+  t 2 "AB_MAX_HIGH='$bad' refused"                   env AB_MAX_HIGH="$bad" node "$AB" check
+done
 # Clear keeps the removed card in the tombstone; ab restore puts it back at the end and lets raise use the id again.
 TB="$T/app/.ab-cleared.jsonl"
 seed "[{\"id\":\"r-first\",$ok,\"question\":\"Ship the invoice export?\",$base},{\"id\":\"r-gone\",$ok,\"question\":\"Ship the CRM sync?\",$base,\"priority\":\"high\",\"details\":[\"One\"],\"updated_at\":\"2026-11-10T09:30:00.000Z\"},{\"id\":\"r-last\",$ok,\"question\":\"Ship the billing banner?\",$base}]"

@@ -328,6 +328,7 @@ its own location. The examples run from the repository root.
 | `AB_PROJECT_FILE` | `project.ts` next to `AB_FILE` | The project file. |
 | `ACTION_BOARD_PORT`, `ACTION_BOARD_HOST` | shell, then `app/.env.local`, then `8085` and `board.localhost` | Where to find the live board, and the card footer. |
 | `AB_URL` | `http://127.0.0.1:<port>` | The live board's base URL, if it differs. |
+| `AB_MAX_HIGH` | `10` | How many open high cards `open` and `check` allow before flagging a flood. A positive integer; anything else exits 2. |
 | `AB_NO_SERVER` | unset | `1` skips the live server checks (tests only). |
 
 ### raise
@@ -336,8 +337,12 @@ Adds a decision, or updates an open one with the same id in place. Input is a JS
 or on stdin (`node bin/ab.mjs raise < decision.json`).
 
 ```sh
-node bin/ab.mjs raise '{"id":"vendor-contract-q3","title":"Q3 vendor contract renewal","card_ref":"https://example.com/contracts/q3-hosting","context":"The hosting vendor sent the Q3 contract. It renews at the same monthly price but adds a 12 month minimum term.","question":"Approve the Q3 vendor contract?","what_happens_after":"The assistant signs the contract and files it.","options":[{"id":"approve","label":"Approve"},{"id":"hold","label":"Hold for now"}]}'
+node bin/ab.mjs raise '{"id":"vendor-contract-q3","title":"Q3 vendor contract renewal","card_ref":"https://example.com/contracts/q3-hosting","context":"The hosting vendor sent the Q3 contract. It renews at the same monthly price but adds a 12 month minimum term.","question":"Approve the Q3 vendor contract?","what_happens_after":"The assistant signs the contract and files it.","options":[{"id":"approve","label":"Approve"},{"id":"hold","label":"Hold for now"}],"blocking":false}'
 ```
+
+A card is blocking only when a named piece of in-flight work (a specific open PR, merge or task being actively
+driven) cannot move until the user answers. Rules or process questions, optional proofs, and cards older than a day
+or two are not blocking.
 
 Fields (anything else, including `answer` and `updated_at`, is refused with exit 2):
 
@@ -349,10 +354,12 @@ Fields (anything else, including `answer` and `updated_at`, is refused with exit
 | `question` | yes | Must name the thing. Refused: "the/this/that/these/those" followed by ticket, tickets, pr, prs, pull request, issue, card, bug, fix, change, branch, item or one, at the end, before punctuation, or before is/are/was/were/be/been/should/will/would/can/could/go/get/stay/need/needs/has/have/do/does; the word "it" anywhere; "this" or "that" at the end or before punctuation. "What should happen to the ticket?" and "Send it back to the vendor?" fail; "Approve the Q3 vendor contract?" passes. |
 | `what_happens_after` | yes | Non-empty text: what the assistant does after the answer. Shown as "After you answer:". |
 | `options` | yes | Non-empty array of `{"id","label"}`. Ids unique and non-empty, labels non-empty. `custom` is reserved. |
+| `blocking` | yes | `true` for a blocking card (definition above), otherwise `false`. Missing or not a boolean: exit 2, `ab: blocking is required: true only if a named open PR, merge or task cannot move until this is answered, and then blocks names it; else false`. `true` stores `priority` `high` (anything blocking something is the highest priority, so it shows first): with no `priority` or `high` it is stored high, with `medium` or `low` it is refused with exit 2 (`ab: blocking cards are always high priority: ...`). A re-raise with `true` upgrades the card to high, never down; with `false` the `priority` rules below apply as before. Cards raised before this field have none (unknown) and are never an error. |
+| `blocks` | with `blocking: true` | The in-flight work the card holds up, like `"PR #1461 hired application guard merge"`. 1 to 200 characters after trimming, stored trimmed, shown on the card as "Blocks: ...". Required with `blocking: true` (missing, blank, not a string or longer: exit 2, `ab: blocking:true needs "blocks" (1 to 200 chars) naming the work it blocks: a card is blocking only when ...`); refused with `blocking: false` (exit 2, `ab: blocks is only for blocking:true cards: ...`). A re-raise with `blocking: false` drops a stored `blocks`. |
 | `details` | no | Non-empty array. Each entry is a non-blank string (a bullet) or `{"label":"...","items":["...",...],"ordered":true or false}` (a labeled list, `ordered` optional). |
 | `multiSelect` | no | `true` or `false` (default `false`). `true`: several options can be picked. |
 | `allowCustom` | no | `true` or `false` (default `true`). `false` hides the free text answer and refuses `ab answer --custom`. |
-| `priority` | no | `high`, `medium` or `low`. Left out: a new card has none (counts as medium) and a re-raise keeps the stored one. |
+| `priority` | no | `high`, `medium` or `low`. Left out: a new card has none (counts as medium) and a re-raise keeps the stored one. A blocking card is always `high` (see `blocking`). |
 | `card_ref` | no | A string or `null`. A reference shown at the bottom of the card; a bare URL becomes a link. |
 | `link` | no | Card only alias: fills `card_ref` when `card_ref` is not given. Not stored itself. |
 | `created_at` | no | ISO time. Used only for a new card (or an old card that has none); default now. |
@@ -380,6 +387,8 @@ Output (exit 0), printed only after the live server serves the new card:
     "link": "https://example.com/contracts/q3-hosting",
     "decision_id": "vendor-contract-q3",
     "priority": "medium",
+    "blocking": false,
+    "blocks": null,
     "footer": "Also on your Action Board: http://board.localhost:8085 (vendor-contract-q3)"
   }
 }
@@ -387,7 +396,8 @@ Output (exit 0), printed only after the live server serves the new card:
 
 When the card has `details`, the card also has `"details"` (after `question`) as plain text lines: `- item` for a
 bullet, `Label:` then `- item` or `1. item` for a labeled list. `options` are the labels in input order. `link` is the
-stored `card_ref` (or `null`). `priority` is the effective priority (`medium` when none is stored).
+stored `card_ref` (or `null`). `priority` is the effective priority (`medium` when none is stored); `blocking` is the raised value and
+`blocks` the stored one (`null` when there is none).
 
 ### answer
 
@@ -454,7 +464,8 @@ node bin/ab.mjs priority vendor-contract-q3 high
 ```
 
 Output: `{"ok":true,"id":"vendor-contract-q3","priority":"high","was":"medium","live":true}`. Exit 2 for a bad
-level, 4 if the decision is answered, 5 for an unknown id. The page's priority control runs this same command.
+level, or for `medium` or `low` on an open card stored with `"blocking":true` (`ab: <id> is a blocking card; blocking
+cards stay high`), 4 if the decision is answered, 5 for an unknown id. The page's priority control runs this same command.
 
 ### glance
 
@@ -510,15 +521,22 @@ node bin/ab.mjs check --chat vendor-contract-q3,offsite-venue-quotes
   "counts": { "waiting": 2, "tickets": 2, "others": 2 },
   "priority_open": { "high": 1, "medium": 1, "low": 0 },
   "open_priority": [
-    { "id": "vendor-contract-q3", "priority": "high" },
-    { "id": "launch-post-day", "priority": "medium" }
+    { "id": "vendor-contract-q3", "priority": "high", "blocking": true, "blocks": "Signing the Q3 hosting contract before the vendor deadline" },
+    { "id": "launch-post-day", "priority": "medium", "blocking": false, "blocks": null }
   ],
   "problems": []
 }
 ```
 
 `open_on_board` is the open ids in the file, `served_open` what the live server serves (`null` when it is down).
-Problems reported: the live board not reachable, the served board older than the file, and with `--chat`:
+`open_priority` lists each open card's priority (`medium` when none is stored), `blocking` (`null` for a card
+raised before the field existed) and `blocks` (`null` when there is none).
+Problems reported: the live board not reachable, the served board older than the file, an open card with
+`"blocking":true` whose priority is not `high` (a hand edit: `blocking is true but priority is <level>; blocking cards
+must be high (fix with ab priority <id> high)`), an open card with `"blocking":true` and no non-blank `blocks`
+(`blocking is true but blocks is empty: name the in-flight work it holds up, or raise <id> again with blocking:false`),
+more than `AB_MAX_HIGH` (default 10) open high cards (`12 open cards are high (limit 10): a flood of high cards hides
+the real blockers`; a high card without `blocking` still counts), and with `--chat`:
 
 - `chat card <id> is NOT on the board: run ab raise for it`
 - `chat card <id> is answered on the board: clear the chat card`
@@ -529,7 +547,8 @@ A corrupt board file is reported as a problem too (`"ok":false`, exit 1).
 ### lint
 
 Lists open decisions that break the title, context or question rules (cards raised before the rules existed, or
-hand edits). Exit 1 if any.
+hand edits), or that have `"blocking":true` without priority `high` or without a non-blank `blocks`. A card without
+`blocking` is never flagged for it. It does not count high cards; `check` does. Exit 1 if any.
 
 ```sh
 node bin/ab.mjs lint
@@ -595,7 +614,10 @@ later refreshes only need the ids and counts.
 ## How a CoS bot raises a decision and builds its chat card
 
 1. Write the decision as JSON (see [raise](#raise)). Pick a stable, readable id such as `vendor-contract-q3`. Write
-   the context for someone reading it cold.
+   the context for someone reading it cold. Set `blocking` to `true` only when a named piece of in-flight work
+   (a specific open PR, merge or task being actively driven) cannot move until the user answers, and name that work
+   in `blocks`; `ab` then stores it as high priority so the user sees it first. Rules or process questions, optional
+   proofs, and cards older than a day or two are not blocking.
 2. Run `node bin/ab.mjs raise '<json>'` (or pipe the JSON on stdin, which avoids shell quoting problems).
 3. Act on the exit code:
    - **0**: parse stdout and build the chat message from `card` (below). Remember `decision_id` with the chat message.

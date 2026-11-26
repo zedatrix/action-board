@@ -73,7 +73,7 @@ const run = (args) => {
   delete env.AB_NO_SERVER;
   return promisify(execFile)(process.execPath, [AB, ...args], { env });
 };
-// ab raise needs a card title; it is stored on the board and shown bold at the top of the card.
+// ab raise needs a card title and blocking; the title is stored on the board and shown bold at the top of the card.
 const add = (d) => run(["raise", JSON.stringify(d)]);
 const mark = (id, opt) => run(["answer", id, opt, "--by", "chat"]);
 const decision = (id) => ({
@@ -87,6 +87,7 @@ const decision = (id) => ({
     { id: "yes", label: "Yes" },
     { id: "no", label: "No" },
   ],
+  blocking: false,
 });
 
 const port = await freePort();

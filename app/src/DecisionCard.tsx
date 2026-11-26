@@ -107,6 +107,7 @@ export function DecisionCard({ decision, index, onAnswer, onClarify, clarify, no
               </button>
             ))}
           </div>
+          {decision.blocks && <p className="stamp">Blocks: {decision.blocks}</p>}
           <button
             type="button"
             className="clarify-btn"

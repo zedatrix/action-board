@@ -170,7 +170,7 @@ const runAb = (boardFile, abUrl, args) => {
   else env.AB_NO_SERVER = "1";
   return promisify(execFile)(process.execPath, [AB, ...args], { env });
 };
-// ab raise needs a card title; it is stored on the board and shown bold at the top of the card.
+// ab raise needs a card title and blocking; the title is stored on the board and shown bold at the top of the card.
 const addDecision = (boardFile, d, abUrl) => runAb(boardFile, abUrl, ["raise", JSON.stringify(d)]);
 const markAnswer = (boardFile, id, opt, abUrl) => runAb(boardFile, abUrl, ["answer", id, opt, "--by", "chat"]);
 
@@ -185,6 +185,7 @@ const decision = (id, title, question) => ({
     { id: "yes", label: "Yes, ship it" },
     { id: "no", label: "Not yet" },
   ],
+  blocking: false,
 });
 
 // ---------- page helpers ----------
