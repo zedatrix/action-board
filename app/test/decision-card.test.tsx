@@ -194,6 +194,14 @@ describe("DecisionCard: context", () => {
     const r = render(<DecisionCard decision={{ ...base, context: "  " }} index={1} onAnswer={vi.fn()} />);
     expect(r.container.querySelector(".context")).toBeNull();
   });
+
+  it("shows the evidence link alongside a different URL in card_ref", () => {
+    const link = "https://github.com/acme/example-api/pull/101";
+    const card_ref = "https://linear.app/acme/issue/ACME-123";
+    render(<DecisionCard decision={{ ...base, context, link, card_ref }} index={1} onAnswer={vi.fn()} />);
+    expect(screen.getByRole("link", { name: link }).getAttribute("href")).toBe(link);
+    expect(screen.getByRole("link", { name: card_ref }).getAttribute("href")).toBe(card_ref);
+  });
 });
 
 describe("DecisionCard: title", () => {
@@ -211,9 +219,10 @@ describe("DecisionCard: title", () => {
     expect(screen.getByRole("heading", { level: 3, name: title })).toBe(el);
   });
 
-  it("is plain text: a URL in the title is not linked", () => {
-    const { container } = render(<DecisionCard decision={{ ...base, title: "Billing banner https://example.com/pr/2" }} index={1} onAnswer={vi.fn()} />);
-    expect(container.querySelector(".card-title a")).toBeNull();
+  it("links a URL in the title", () => {
+    const link = "https://github.com/acme/example-api/pull/101";
+    const { container } = render(<DecisionCard decision={{ ...base, title: `Billing banner ${link}` }} index={1} onAnswer={vi.fn()} />);
+    expect(container.querySelector(".card-title a")?.getAttribute("href")).toBe(link);
   });
 
   it("labels the card by title and question when there is a title", () => {

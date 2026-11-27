@@ -13,6 +13,8 @@
 //       https://github.com/<owner>/<repo>/pull/<number>, one on linear.app https://linear.app/<workspace>/issue/<KEY-N>
 //       (either may go on with / ? #); a card_ref that is a bare PR ref (#42, example-web#42) or ticket key
 //       (PROJ-1234) must match the link (same kind, number, repo when named, key). A bare ref without a link is allowed.
+//     Law q: every PR or ticket named in title, context or question needs a matching URL in link, card_ref or the
+//       card text. Refusals start with "ab: raise: law q:" and leave the board untouched.
 //     User must understand the card cold, so raise refuses (exit 2, board untouched) a card that does not say what it is about:
 //     "context" (required, shown first): 1 to 3 sentences, max 600 chars, at least 6 plain words besides ids (PROJ-1234, #123,
 //       URLs). Say what the item is in plain words (feature or screen, not just an id) and what happened that needs the user’s call.
@@ -38,6 +40,8 @@
 //     optional "priority": "high", "medium" or "low" (anything else: exit 2, board untouched). Left out: a new card is stored
 //     without it (medium) unless blocking; a re-raise keeps the stored one. The printed card carries the effective priority
 //     ("medium" if none), blocking and blocks.
+//   ab lint-card '<json>' | ab lint-card < decision.json   -> validates a raise without opening or writing the board
+//     Prints {"ok":true} (exit 0) or {"ok":false,"error":"..."} (exit 2, with "law":"q" for law q).
 //   ab answer <id> <opt[,opt]> --by chat|app [--at ISO]
 //   ab answer <id> --custom "text" --by chat|app [--at ISO]
 //   ab clear <id> --reason "why"                    (tombstoned: raise refuses it later) -> {"ok","status":"cleared","id"}
@@ -130,6 +134,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+const [cmd, ...args] = process.argv.slice(2);
 const FILE = process.env.AB_FILE || fileURLToPath(new URL("../app/src/data/board.ts", import.meta.url));
 const APP_DIR = path.join(path.dirname(FILE), "..", "..");
 // A setting from the shell, else from app/.env.local (plain KEY=value lines), else undefined.
@@ -140,8 +145,8 @@ function setting(key) {
     return line?.slice(key.length + 1).trim().replace(/^["']|["']$/g, "") || undefined;
   } catch { return undefined; }
 }
-const PORT = Number(setting("ACTION_BOARD_PORT")) || 8085;
-const HOST = (setting("ACTION_BOARD_HOST") || "board.localhost").toLowerCase();
+const PORT = (cmd !== "lint-card" && Number(setting("ACTION_BOARD_PORT"))) || 8085;
+const HOST = ((cmd !== "lint-card" && setting("ACTION_BOARD_HOST")) || "board.localhost").toLowerCase();
 const URL_ = process.env.AB_URL || "http://127.0.0.1:" + PORT;
 const MAX_HIGH = Number(process.env.AB_MAX_HIGH ?? 10);
 const TOMB = path.join(APP_DIR, ".ab-cleared.jsonl");
@@ -212,12 +217,14 @@ const storedProblems = (d) => [contextError(d.context), questionError(d.question
 // and a link given with a bare ref must point at that same PR or ticket. Returns an error or null.
 const GH_FORM = "https://github.com/<owner>/<repo>/pull/<number>";
 const LIN_FORM = "https://linear.app/<workspace>/issue/<KEY-N>";
-const PR_REF = /^([A-Za-z0-9._-]+)?#(\d+)$/, TICKET_KEY = /^[A-Za-z][A-Za-z0-9]*-\d+$/;
-// The ref a string names: {kind:"pr",repo?,number} | {kind:"ticket",key} | null.
+const PR_REPO = "(?:([a-z0-9-]+)/)?([a-z0-9._-]+)";
+const PR_REF = new RegExp(`^(?:${PR_REPO})?#(\\d+)$`, "i");
+const TICKET_KEY = /^[A-Za-z][A-Za-z0-9]*-\d+$/;
+const prNumber = (s) => s.replace(/^0+(?=\d)/, "");
 function bareRef(s) {
   const t = typeof s === "string" ? s.trim() : "";
   const m = PR_REF.exec(t);
-  if (m) return { kind: "pr", repo: m[1] || null, number: m[2].replace(/^0+(?=\d)/, ""), text: t };
+  if (m) return { kind: "pr", owner: m[1], repo: m[2], number: prNumber(m[3]), text: t };
   return TICKET_KEY.test(t) ? { kind: "ticket", key: t.toUpperCase(), text: t } : null;
 }
 // A github.com / linear.app link checked segment by segment: {kind, repo?, number?, key?} or {error}. null when the
@@ -243,26 +250,74 @@ function parseLink(field, s) {
     if (!/^[A-Za-z0-9._-]+$/.test(seg[1] || "")) return bad("the repo is missing");
     if (seg[2] !== "pull") return bad("it must be a /pull/ URL, not " + (seg[2] ? "/" + seg[2] + "/" : "a repo page"));
     if (!/^\d+$/.test(seg[3] || "")) return bad("the PR number is missing");
-    return { kind, owner: seg[0], repo: seg[1], number: seg[3].replace(/^0+(?=\d)/, "") };
+    return { kind, owner: seg[0], repo: seg[1], number: prNumber(seg[3]) };
   }
   if (!/^[A-Za-z0-9-]+$/.test(seg[0] || "")) return bad("the workspace is missing or invalid");
   if (seg[1] !== "issue") return bad("it must be an /issue/ URL");
   if (!TICKET_KEY.test(seg[2] || "")) return bad("the ticket key (KEY-N) is missing");
   return { kind, key: seg[2].toUpperCase() };
 }
-function linkError(d) {
-  const ref = bareRef(d.card_ref);
-  const urls = [["card_ref", d.card_ref], ["link", d.link]].filter(([, v]) => typeof v === "string" && !bareRef(v));
-  const parsed = {};
-  for (const [field, v] of urls) { const p = parseLink(field, v); if (p?.error) return p.error; parsed[field] = p; }
-  if (!ref || typeof d.link !== "string") return null;      // nothing to match: a bare ref without a link cannot be checked
-  const l = parsed.link, name = (k) => k === "pr" ? "a GitHub PR URL" : "a Linear issue URL";
-  const expected = ref.kind === "pr" ? GH_FORM.replace("<repo>", ref.repo || "<repo>").replace("<number>", ref.number) : "https://linear.app/<workspace>/issue/" + ref.key;
-  if (!l) return "link must be " + name(ref.kind) + " for card_ref " + ref.text + " (" + expected + "), got " + d.link.trim();
+function expectedLink(ref) {
+  if (ref.kind === "ticket") return LIN_FORM.replace("<KEY-N>", ref.key);
+  return GH_FORM.replace("<owner>", ref.owner ?? "<owner>").replace("<repo>", ref.repo ?? "<repo>").replace("<number>", ref.number);
+}
+function linkError(linkText, ref, l, cardRef) {
+  if (cardRef?.error) return cardRef.error;
+  if (l?.error) return l.error;
+  if (!ref || typeof linkText !== "string") return null;
+  const name = (k) => k === "pr" ? "a GitHub PR URL" : "a Linear issue URL";
+  const expected = expectedLink(ref);
+  if (!l) return "link must be " + name(ref.kind) + " for card_ref " + ref.text + " (" + expected + "), got " + linkText;
   if (l.kind !== ref.kind) return "link is " + name(l.kind) + " but card_ref " + ref.text + " is a " + (ref.kind === "pr" ? "PR" : "ticket") + "; use " + expected;
   if (ref.kind === "ticket") return l.key === ref.key ? null : "link ticket " + l.key + " does not match card_ref " + ref.text;
   if (l.number !== ref.number) return "link PR number " + l.number + " does not match card_ref " + ref.text;
   if (ref.repo && ref.repo.toLowerCase() !== l.repo.toLowerCase()) return "link repo " + l.repo + " does not match card_ref " + ref.text;
+  if (ref.owner && ref.owner.toLowerCase() !== l.owner.toLowerCase()) return "link owner " + l.owner + " does not match card_ref " + ref.text;
+  return null;
+}
+
+const LAW_Q = "law q: ";
+const NON_TICKET_PREFIXES = new Set(["UTF", "ISO", "COVID", "SHA", "X"]);
+const TEXT_TICKET = /(?<![\p{L}\p{N}_])([a-z]{2,10})-\d+(?![\p{L}\p{N}_])/giu;
+const TEXT_PR = new RegExp(`(?<![\\p{L}\\p{N}_])(?:pr\\s*#?|pull\\s+)(\\d+)(?![\\p{L}\\p{N}_])|(?:(?<![\\p{L}\\p{N}._/-])${PR_REPO})?#(\\d+)(?![\\p{L}\\p{N}_])`, "giu");
+const TEXT_URL = /\b(?:[a-z][a-z0-9+.-]*:\/\/|(?:github\.com|linear\.app)\/)[^\s<>"'`\])]+/gi;
+const EVIDENCE_PATH = /github\.com[^?#]*\/pull(?:[/?#]|$)|linear\.app[^?#]*\/issue(?:[/?#]|$)/i;
+
+function matchesRef(ref, url) {
+  if (url.kind !== ref.kind) return false;
+  if (ref.kind === "ticket") return url.key === ref.key;
+  return url.number === ref.number
+    && (!ref.repo || url.repo.toLowerCase() === ref.repo.toLowerCase())
+    && (!ref.owner || url.owner.toLowerCase() === ref.owner.toLowerCase());
+}
+
+function lawQError(d, link, cardRef) {
+  const urls = [link, cardRef].filter((url) => url && !url.error);
+  const refs = [];
+  for (const field of ["title", "context", "question"]) {
+    if (typeof d[field] !== "string") continue;
+    for (const [raw] of d[field].matchAll(TEXT_URL)) {
+      const url = raw.replace(/[.,;:!?]+$/, "");
+      if (!EVIDENCE_PATH.test(url)) continue;
+      const parsed = parseLink(field, url);
+      if (!parsed || parsed.error) return LAW_Q + (parsed?.error ?? field + " has an invalid link") + ". Use the exact evidence URL.";
+      urls.push(parsed);
+    }
+    const prose = d[field].replace(TEXT_URL, " ").replace(TEXT_PR, (_text, named, owner, repo, hash) => {
+      refs.push({ kind: "pr", owner, repo, number: prNumber(named ?? hash) });
+      return " ";
+    });
+    for (const [text, prefix] of prose.matchAll(TEXT_TICKET)) {
+      if (!NON_TICKET_PREFIXES.has(prefix.toUpperCase())) refs.push({ kind: "ticket", key: text.toUpperCase() });
+    }
+  }
+  for (const ref of refs) {
+    const name = ref.kind === "ticket" ? "ticket " + ref.key
+      : "PR " + (ref.owner ? ref.owner + "/" : "") + (ref.repo ? ref.repo + "#" : "") + ref.number;
+    const fix = "add " + expectedLink(ref) + " in link, card_ref or the card text";
+    if (link?.error || cardRef?.error) return LAW_Q + (link?.error ?? cardRef.error) + "; " + fix;
+    if (!urls.some((url) => matchesRef(ref, url))) return LAW_Q + "card names " + name + "; " + fix;
+  }
   return null;
 }
 // The canonical https://github.com/<owner>/<repo>/pull/<n> for a PR URL (a trailing /, ?query or #fragment dropped):
@@ -479,37 +534,63 @@ const PR_KEYS = ["base", "head", "hot", "hot_by", "hot_at"];
 // Writes one explicit HOT mark onto a glance PR item: hot:true sets hot, hot:false drops it; hot_by/hot_at always.
 const applyMark = (x, m) => { if (m.hot) x.hot = true; else delete x.hot; x.hot_by = m.by; x.hot_at = m.at; };
 
-const [cmd, ...args] = process.argv.slice(2);
 const input = () => (args[0] && args[0].trim().startsWith("{") ? args[0] : fs.readFileSync(0, "utf8"));
 // Input that is not valid JSON is bad input: exit 2, nothing written.
 const parseInput = (text) => { try { return JSON.parse(text); } catch (e) { die(2, cmd + ": input is not valid JSON (" + e.message + ")"); } };
 
-if (cmd === "raise") {
-  const d = parseInput(input());
-  if (!d || typeof d !== "object" || Array.isArray(d)) die(2, "raise: input must be a JSON object");
-  for (const k of Object.keys(d)) if (!ALLOWED.has(k)) die(2, "unknown field " + k + " (allowed: " + [...ALLOWED].join(", ") + ")");
-  if (d.link == null) delete d.link;
-  else if (typeof d.link !== "string" || !d.link.trim()) die(2, "raise: link must be a non-blank string (a PR or issue URL) or left out");
-  else d.link = d.link.trim();
-  { const e = linkError(d); if (e) die(2, "raise: " + e); }
-  if (d.link && !d.card_ref) d.card_ref = d.link;     // the board shows card_ref as the card's evidence link
-  if (!/^[a-z0-9][a-z0-9-]{2,80}$/.test(d.id || "")) die(2, "id must be lowercase-kebab, 3-81 chars");
-  if (!d.question || !d.what_happens_after) die(2, "need question and what_happens_after in plain words");
-  if (!Array.isArray(d.options) || !d.options.length) die(2, "need at least one option");
-  const ids = d.options.map((o) => o.id);
-  if (d.options.some((o) => !o.id || !o.label) || new Set(ids).size !== ids.length || ids.includes("custom")) die(2, "options need unique id+label; 'custom' is reserved");
-  for (const k of ["multiSelect", "allowCustom"]) if (k in d && typeof d[k] !== "boolean") die(2, k + " must be true or false");
-  if ("details" in d) { const e = detailsError(d.details); if (e) die(2, e); }
-  if ("priority" in d && !isPriority(d.priority)) die(2, "priority must be high, medium or low");
-  if (typeof d.blocking !== "boolean") die(2, "blocking is required: true only if a named open PR, merge or task cannot move until this is answered, and then blocks names it; else false");
-  if (d.blocking && "priority" in d && d.priority !== "high") die(2, "blocking cards are always high priority: drop priority or pass \"high\" (got \"" + d.priority + "\")");
-  if (d.blocking && (!hasBlocks(d) || d.blocks.trim().length > 200)) die(2, "blocking:true needs \"blocks\" (1 to 200 chars) naming the work it blocks: " + BLOCKS_RULE);
-  if (!d.blocking && "blocks" in d) die(2, "blocks is only for blocking:true cards: " + BLOCKS_RULE);
+function validateRaise(d) {
+  if (!d || typeof d !== "object" || Array.isArray(d)) return "raise: input must be a JSON object";
+  for (const k of Object.keys(d)) if (!ALLOWED.has(k)) return "unknown field " + k + " (allowed: " + [...ALLOWED].join(", ") + ")";
+  const linkText = typeof d.link === "string" ? d.link.trim() : d.link;
+  let link = null;
+  if (linkText != null) {
+    if (typeof linkText !== "string" || !linkText) link = { error: "link must be a non-blank string (a PR or issue URL) or left out" };
+    else link = parseLink("link", linkText);
+  }
+  const ref = bareRef(d.card_ref);
+  const cardRef = !ref && typeof d.card_ref === "string" ? parseLink("card_ref", d.card_ref) : null;
+  const lawError = lawQError(d, link, cardRef);
+  if (lawError) return "raise: " + lawError;
+  const evidenceError = linkError(linkText, ref, link, cardRef);
+  if (evidenceError) return "raise: " + evidenceError;
+  if (linkText == null) delete d.link;
+  else d.link = linkText;
+  if (d.link && !d.card_ref) d.card_ref = d.link;
+  if (!/^[a-z0-9][a-z0-9-]{2,80}$/.test(d.id || "")) return "id must be lowercase-kebab, 3-81 chars";
+  if (!d.question || !d.what_happens_after) return "need question and what_happens_after in plain words";
+  if (!Array.isArray(d.options) || !d.options.length) return "need at least one option";
+  const ids = d.options.map((o) => o?.id);
+  if (d.options.some((o) => !o?.id || !o.label) || new Set(ids).size !== ids.length || ids.includes("custom")) return "options need unique id+label; 'custom' is reserved";
+  for (const k of ["multiSelect", "allowCustom"]) if (k in d && typeof d[k] !== "boolean") return k + " must be true or false";
+  if ("details" in d) { const e = detailsError(d.details); if (e) return e; }
+  if ("priority" in d && !isPriority(d.priority)) return "priority must be high, medium or low";
+  if (typeof d.blocking !== "boolean") return "blocking is required: true only if a named open PR, merge or task cannot move until this is answered, and then blocks names it; else false";
+  if (d.blocking && "priority" in d && d.priority !== "high") return "blocking cards are always high priority: drop priority or pass \"high\" (got \"" + d.priority + "\")";
+  if (d.blocking && (!hasBlocks(d) || d.blocks.trim().length > 200)) return "blocking:true needs \"blocks\" (1 to 200 chars) naming the work it blocks: " + BLOCKS_RULE;
+  if (!d.blocking && "blocks" in d) return "blocks is only for blocking:true cards: " + BLOCKS_RULE;
   if (d.blocking) { d.priority = "high"; d.blocks = d.blocks.trim(); }
   const problems = storedProblems(d);
-  if (problems.length) die(2, problems.join("\nab: "));
+  if (problems.length) return problems.join("\nab: ");
   d.context = d.context.trim();
-  const title = d.title.trim();
+  d.title = d.title.trim();
+  return null;
+}
+
+if (cmd === "raise" || cmd === "lint-card") {
+  let d, error;
+  try { d = JSON.parse(args[0] ?? fs.readFileSync(0, "utf8")); }
+  catch { error = "raise: input is not valid JSON"; }
+  error ??= validateRaise(d);
+  if (cmd === "lint-card") {
+    const message = error?.replace(/^raise: /, "");
+    const result = error
+      ? { ok: false, ...(message.startsWith(LAW_Q) ? { law: "q" } : {}), error: message }
+      : { ok: true };
+    fs.writeSync(1, JSON.stringify(result) + "\n");
+    process.exit(error ? 2 : 0);
+  }
+  if (error) die(2, error);
+  const { title } = d;
   lock();
   if (isCleared(d.id)) die(4, "refusing: " + d.id + " was cleared before; use a new id only for a genuinely new decision");
   const f = load();
@@ -857,5 +938,5 @@ if (cmd === "raise") {
   const out = view === "all" ? items : (await appModule("todos.ts")).cliTodoList(items, view, new Date());
   console.log(JSON.stringify(out));
 } else {
-  die(2, "usage: ab raise|answer|clear|restore|priority|glance|hot|unhot|open|check|lint|backfill-stamps|backfill-titles|project-refresh|todo-add|todo-update|todo-comment|todo-done|todo-reopen|todo-list (see header of " + process.argv[1] + ")");
+  die(2, "usage: ab raise|lint-card|answer|clear|restore|priority|glance|hot|unhot|open|check|lint|backfill-stamps|backfill-titles|project-refresh|todo-add|todo-update|todo-comment|todo-done|todo-reopen|todo-list (see header of " + process.argv[1] + ")");
 }

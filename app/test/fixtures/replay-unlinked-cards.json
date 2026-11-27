@@ -1,0 +1,86 @@
+[
+  {
+    "card": {
+      "id": "sample-checkout-colors",
+      "title": "Checkout colors #101",
+      "context": "Alice changed the checkout colors to make the payment button easier to see.",
+      "question": "Approve the updated checkout colors?",
+      "what_happens_after": "The assistant records the selected decision.",
+      "options": [
+        {
+          "id": "approve",
+          "label": "Approve"
+        },
+        {
+          "id": "hold",
+          "label": "Hold"
+        }
+      ],
+      "blocking": false
+    },
+    "link": "https://github.com/acme/example-api/pull/101"
+  },
+  {
+    "card": {
+      "id": "sample-invoice-export",
+      "title": "Invoice export format",
+      "context": "Bob updated the invoice export in PR 202 to include the currency column.",
+      "question": "Approve the new invoice export format?",
+      "what_happens_after": "The assistant records the selected decision.",
+      "options": [
+        {
+          "id": "approve",
+          "label": "Approve"
+        },
+        {
+          "id": "hold",
+          "label": "Hold"
+        }
+      ],
+      "blocking": false
+    },
+    "link": "https://github.com/acme/example-api/pull/202"
+  },
+  {
+    "card": {
+      "id": "sample-dashboard-filter",
+      "title": "Dashboard filter defaults",
+      "context": "Alice changed the dashboard date filters to open on the most recent week.",
+      "question": "Use the latest week as the dashboard default in pull 303?",
+      "what_happens_after": "The assistant records the selected decision.",
+      "options": [
+        {
+          "id": "approve",
+          "label": "Approve"
+        },
+        {
+          "id": "hold",
+          "label": "Hold"
+        }
+      ],
+      "blocking": false
+    },
+    "link": "https://github.com/acme/example-api/pull/303"
+  },
+  {
+    "card": {
+      "id": "sample-receipt-preview",
+      "title": "Receipt preview acme/example-api#404",
+      "context": "Bob added a receipt preview so customers can check the billing address.",
+      "question": "Approve the new receipt preview?",
+      "what_happens_after": "The assistant records the selected decision.",
+      "options": [
+        {
+          "id": "approve",
+          "label": "Approve"
+        },
+        {
+          "id": "hold",
+          "label": "Hold"
+        }
+      ],
+      "blocking": false
+    },
+    "link": "https://github.com/acme/example-api/pull/404"
+  }
+]

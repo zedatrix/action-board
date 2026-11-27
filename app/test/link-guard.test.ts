@@ -109,3 +109,82 @@ describe("ab raise link guard", () => {
     expect(JSON.parse(r.out).failing).toEqual([]);
   });
 });
+
+const pr = "https://github.com/acme/example-api/pull/101";
+const ticket = "https://linear.app/acme/issue/ACME-123";
+const decision = JSON.parse(card("t-law-q", null));
+
+function deny(payload: object, fix: string) {
+  const before = readFileSync(file);
+  const json = JSON.stringify(payload);
+  const raise = ab("raise", json);
+  const lint = ab("lint-card", json);
+  expect(raise.status).toBe(2);
+  expect(raise.out).toBe("");
+  expect(raise.err).toMatch(/^ab: raise: law q:/);
+  expect(raise.err).toContain(fix);
+  expect(lint.status).toBe(2);
+  expect(JSON.parse(lint.out)).toEqual({ ok: false, law: "q", error: raise.err.trim().slice("ab: raise: ".length) });
+  expect(readFileSync(file).equals(before)).toBe(true);
+}
+
+function allow(payload: object) {
+  const before = readFileSync(file);
+  const json = JSON.stringify(payload);
+  const lint = ab("lint-card", json);
+  expect([lint.status, JSON.parse(lint.out)]).toEqual([0, { ok: true }]);
+  expect(readFileSync(file).equals(before)).toBe(true);
+  const raise = ab("raise", json);
+  expect([raise.status, raise.err]).toEqual([0, ""]);
+}
+
+describe("law q", () => {
+  it.each(["#101", "PR 101", "PR #101", "PR101", "pull 101", "acme/example-api#101"])(
+    "requires the matching URL for %s on a raise and re-raise",
+    (ref) => {
+      const payload = { ...decision, title: `Checkout color update (${ref})` };
+      deny(payload, "/pull/101");
+      allow({ ...payload, link: pr });
+      deny(payload, "/pull/101");
+    },
+  );
+
+  it("accepts a full URL in context or card_ref and matches a bare number across repositories", () => {
+    const payload = { ...decision, question: "Approve checkout color update #101?" };
+    const alternate = "https://github.com/alice/example-web/pull/101";
+    allow({ ...payload, context: `The checkout color update is ready for review at ${alternate}.` });
+    allow({ ...payload, card_ref: alternate });
+    allow({ ...decision, title: `Checkout review ${pr}` });
+  });
+
+  it("requires the exact owner, repo, PR number and ticket key", () => {
+    const payload = { ...decision, title: "Checkout color update acme/example-api#101", question: "Approve ACME-123 checkout colors?" };
+    deny({ ...payload, link: pr.replace("/101", "/202"), card_ref: ticket }, pr);
+    deny({ ...payload, link: pr.replace("/acme/", "/alice/"), card_ref: ticket }, pr);
+    deny({ ...payload, link: pr.replace("example-api", "example-web"), card_ref: ticket }, pr);
+    deny({ ...payload, link: pr, card_ref: ticket.replace("123", "1234") }, "https://linear.app/<workspace>/issue/ACME-123");
+    allow({ ...payload, link: pr, card_ref: ticket });
+  });
+
+  it("fails closed when evidence is malformed or is on a look-alike host", () => {
+    const payload = { ...decision, context: "The checkout color update in PR 101 is ready for review." };
+    deny({ ...payload, link: "https://example.com/pr/101" }, "https://github.com/<owner>/<repo>/pull/101");
+    deny({ ...payload, link: pr.replace("https:", "http:") }, "it must use https://");
+    deny({ ...payload, link: 101 }, "link must be a non-blank string");
+    deny({ ...decision, context: `Review the checkout color at ${pr.replace("github.com", "github.com.example.com")}.` }, "the host must be exactly github.com");
+    deny({ ...decision, context: `Review the checkout color at ${pr.replace("/101", "/")}.` }, "the PR number is missing");
+  });
+
+  it("accepts UTF-8 text and common non-ticket prefixes", () => {
+    allow({ ...decision, title: "Résumé du café", context: "Le café utilise UTF-8, ISO-8859, COVID-19, SHA-256 et X-11 pour cette démonstration." });
+  });
+
+  it("replays four sample cards with and without their links", () => {
+    const samples = JSON.parse(readFileSync(new URL("./fixtures/replay-unlinked-cards.json", import.meta.url), "utf8"));
+    expect(samples).toHaveLength(4);
+    for (const { card, link } of samples) {
+      deny(card, new URL(link).pathname.split("/pull/").at(-1)!);
+      allow({ ...card, link });
+    }
+  });
+});

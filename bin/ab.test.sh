@@ -102,7 +102,7 @@ done
 t 0 "details refusal says why"     bash -c "node '$AB' raise '$(dec t-bad '[{"label":"L","items":["x"],"extra":1}]')' 2>&1 | grep -q 'details\[0\] has unknown key extra'"
 t 0 "details refusals leave board.ts unchanged"  test "$(cksum < "$AB_FILE")" = "$SUM"
 # Plain words: context required, no vague question, title more than an id. Refusals exit 2 and leave board.ts alone.
-OLD='{"id":"proj15054-old","title":"PROJ-15054","question":"What should happen to the ticket?","what_happens_after":"Ellis acts on your pick.","options":[{"id":"cancel","label":"Cancel"}],"blocking":false}'
+OLD='{"id":"proj15054-old","title":"PROJ-15054","question":"What should happen to the ticket?","what_happens_after":"Your assistant acts on your pick.","options":[{"id":"cancel","label":"Cancel"}],"link":"https://linear.app/acme/issue/PROJ-15054","blocking":false}'
 GOODCTX='"context":"Ticket PROJ-15054 asks for a required asterisk on the Address field of the employee emergency contact form. Product (Quinlan) says Address is optional, so the ticket asks for something product does not want."'
 withctx() { echo "$OLD" | sed "s/\"question\"/$GOODCTX,\"question\"/"; }
 SUM=$(cksum < "$AB_FILE")
@@ -117,7 +117,7 @@ for q in "Should the PR be merged?" "Send it back to Quinlan?" "Ship that?" "Mer
   t 2 "vague question refused: $q"        node "$AB" raise "$(echo "$FIXQ" | sed "s/Close the emergency contact Address asterisk ticket?/$q/")"
 done
 GOOD=$(echo "$FIXQ" | sed 's/"id":"proj15054-old","title":"PROJ-15054"/"id":"proj15054-close","title":"PROJ-15054 Emergency contact Address asterisk"/')
-for c in '"context":"PROJ-15054 #12 https://example.com/z fix"' '"context":"One. Two. Three. Four five more words here."' '"context":"   "' '"context":3' "\"context\":\"$(printf 'word %.0s' $(seq 121))\""; do
+for c in '"context":"PROJ-15054 fix"' '"context":"One. Two. Three. Four five more words here."' '"context":"   "' '"context":3' "\"context\":\"$(printf 'word %.0s' $(seq 121))\""; do
   BAD=$(echo "$GOOD" | sed "s|$GOODCTX|$c|")
   t 2 "bad context refused: ${c:0:50}"    node "$AB" raise "$BAD"
   t 0 "  ...and the error names context"  bash -c "node '$AB' raise '$BAD' 2>&1 | grep -q '^ab: context'"
