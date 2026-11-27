@@ -1,21 +1,22 @@
 import { useId, useLayoutEffect, useRef } from "react";
 import { ASSISTANT_NAME } from "./config";
+import type { Todo } from "./data/types";
 import type { MessageRecord } from "./delivery";
 import type { BoardItem } from "./messages";
 
 // An open composer. message_id is set once Send was pressed; the composer then locks until it closes on a 2xx.
 export type Draft = { text: string; message_id?: string };
 
-type Props = {
-  item: BoardItem;
+type Props<T extends BoardItem | Todo> = {
+  item: T;
   draft: Draft | undefined;
   // The newest message sent about this item, if any.
   latest: MessageRecord | undefined;
   webhookConfigured: boolean;
-  onOpen: (item: BoardItem) => void;
-  onText: (item: BoardItem, text: string) => void;
-  onClose: (item: BoardItem) => void;
-  onSend: (item: BoardItem, text: string) => void;
+  onOpen: (item: T) => void;
+  onText: (item: T, text: string) => void;
+  onClose: (item: T) => void;
+  onSend: (item: T, text: string) => void;
 };
 
 function localTime(iso: string): string {
@@ -32,8 +33,10 @@ export function messageStatusText(rec: MessageRecord, webhookConfigured: boolean
 
 // "Message <assistant>" button, the latest note's delivery state, and an inline composer. Rendered as siblings so the
 // glance row can put the button beside the item and the rest underneath. Never changes the item itself.
-export function MessageAssistant({ item, draft, latest, webhookConfigured, onOpen, onText, onClose, onSend }: Props) {
+export function MessageAssistant<T extends BoardItem | Todo>({ item, draft, latest, webhookConfigured, onOpen, onText, onClose, onSend }: Props<T>) {
   const fieldId = useId();
+  const isBoardItem = "item_title" in item;
+  const title = isBoardItem ? item.item_title : item.name;
   const text = draft?.text ?? "";
   const locked = Boolean(draft?.message_id);
   const canSend = !locked && text.trim() !== "";
@@ -54,13 +57,13 @@ export function MessageAssistant({ item, draft, latest, webhookConfigured, onOpe
         type="button"
         className="msg-btn"
         aria-expanded={Boolean(draft)}
-        aria-label={`Message ${ASSISTANT_NAME} about ${item.item_title}`}
+        aria-label={`Message ${ASSISTANT_NAME} about ${title}`}
         onClick={() => {
           onOpen(item);
           document.getElementById(fieldId)?.focus();
         }}
       >
-        Message {ASSISTANT_NAME}
+        {isBoardItem ? `Message ${ASSISTANT_NAME}` : "Message"}
       </button>
       {latest && (
         <p className={`msg-status ${latest.status}`} aria-live="polite">
@@ -81,7 +84,7 @@ export function MessageAssistant({ item, draft, latest, webhookConfigured, onOpe
             value={text}
             readOnly={locked}
             autoFocus
-            aria-label={`Message to ${ASSISTANT_NAME} about ${item.item_title}`}
+            aria-label={`Message to ${ASSISTANT_NAME} about ${title}`}
             aria-describedby={`${fieldId}-hint`}
             placeholder={`What should ${ASSISTANT_NAME} know or do about this?`}
             onChange={(e) => onText(item, e.target.value)}

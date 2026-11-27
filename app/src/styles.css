@@ -1631,13 +1631,26 @@ a.item:hover {
   border-top: 1px solid var(--border);
 }
 
-/* A row: checkbox, name, then the chips; chips wrap under the name when narrow. */
+/* The chips wrap under the name when narrow. */
 .todo-row {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 6px 12px;
   padding: 10px 14px;
+}
+
+.todo-row .msg-btn {
+  grid-column: 4;
+  grid-row: 1;
+  min-height: 32px;
+  padding: 0 8px;
+  gap: 5px;
+}
+
+.todo-row .msg-status,
+.todo-row .composer {
+  grid-column: 2 / -1;
 }
 
 .todo[data-priority="urgent"] {
@@ -1858,7 +1871,10 @@ button.todo-chip {
     margin: 0 10px 12px;
   }
   .todo-row {
-    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+  .todo-row .msg-btn {
+    grid-column: 3;
   }
   .todo-chips {
     grid-column: 2;

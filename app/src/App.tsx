@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { board as bundledBoard } from "./data/board";
-import type { Decision, Priority } from "./data/types";
+import type { Decision, Priority, Todo } from "./data/types";
 import { DecisionCard, type ClarifyState, type NotRelevantState } from "./DecisionCard";
 import {
   buildClarifyPayload,
@@ -21,7 +21,7 @@ import {
   type AppMessages,
   type MessageRecord,
 } from "./delivery";
-import { buildMessagePayload, itemKey, newMessageId, type BoardItem } from "./messages";
+import { buildMessagePayload, buildTodoMessagePayload, itemKey, newMessageId, todoMessageKey, type BoardItem } from "./messages";
 import { MessageAssistant, type Draft } from "./MessageAssistant";
 import { effectivePriority, groupByPriority, PRIORITY_LABEL, PRIORITY_PATH, sortByPriority } from "./priority";
 import { PrsTab } from "./PrsTab";
@@ -36,6 +36,9 @@ const WEBHOOK_URL = import.meta.env.ACTION_BOARD_WEBHOOK_URL || undefined;
 const WEBHOOK_AUTH = import.meta.env.ACTION_BOARD_WEBHOOK_AUTH || undefined;
 
 type Toast = { id: number; text: string };
+type MessageTarget = BoardItem | Todo;
+
+const messageTargetKey = (item: MessageTarget) => ("item_id" in item ? itemKey(item) : todoMessageKey(item.id));
 
 const sleep = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
 
@@ -50,7 +53,7 @@ export default function App({ prsPanel }: { prsPanel?: HTMLElement | null }) {
   const now = useNow();
   const [answers, setAnswers] = useState<AppAnswers>(() => loadAnswers(window.localStorage));
   const [messages, setMessages] = useState<AppMessages>(() => loadMessages(window.localStorage));
-  // Open composers by itemKey, so typed text survives live board updates and reorders.
+  // Keep drafts by target so typed text survives live updates and reorders.
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [toasts, setToasts] = useState<Toast[]>([]);
   // "Explain this better" per decision id, so it survives live updates and reorders.
@@ -270,46 +273,51 @@ export default function App({ prsPanel }: { prsPanel?: HTMLElement | null }) {
   const latest = useMemo(() => {
     const byItem = new Map<string, MessageRecord>();
     for (const rec of Object.values(messages)) {
-      if (!rec?.payload?.item_id) continue;
-      const k = itemKey(rec.payload);
+      const payload = rec?.payload;
+      if (!payload) continue;
+      const k = payload.event === "todo.message" ? todoMessageKey(payload.todo_id) : itemKey(payload);
       const prev = byItem.get(k);
       if (!prev || prev.payload.sent_at <= rec.payload.sent_at) byItem.set(k, rec);
     }
     return byItem;
   }, [messages]);
 
-  const openComposer = useCallback((item: BoardItem) => {
-    setDrafts((ds) => (ds[itemKey(item)] ? ds : { ...ds, [itemKey(item)]: { text: "" } }));
+  const openComposer = useCallback((item: MessageTarget) => {
+    const key = messageTargetKey(item);
+    setDrafts((ds) => (ds[key] ? ds : { ...ds, [key]: { text: "" } }));
   }, []);
-  const typeDraft = useCallback((item: BoardItem, text: string) => {
-    setDrafts((ds) => ({ ...ds, [itemKey(item)]: { ...ds[itemKey(item)], text } }));
+  const typeDraft = useCallback((item: MessageTarget, text: string) => {
+    const key = messageTargetKey(item);
+    setDrafts((ds) => ({ ...ds, [key]: { ...ds[key], text } }));
   }, []);
-  const closeComposer = useCallback((item: BoardItem) => {
+  const closeComposer = useCallback((item: MessageTarget) => {
     setDrafts((ds) => {
       const next = { ...ds };
-      delete next[itemKey(item)];
+      delete next[messageTargetKey(item)];
       return next;
     });
   }, []);
   const sendMessage = useCallback(
-    (item: BoardItem, text: string) => {
+    (item: MessageTarget, text: string) => {
       let payload;
       try {
-        payload = buildMessagePayload(item, text, new Date(), newMessageId());
+        const now = new Date();
+        const id = newMessageId();
+        payload = "item_id" in item ? buildMessagePayload(item, text, now, id) : buildTodoMessagePayload(item, text, now, id);
       } catch {
         return; // Blank text: Send is disabled, so this only guards against a stray submit.
       }
-      setDrafts((ds) => ({ ...ds, [itemKey(item)]: { text: payload.text, message_id: payload.message_id } }));
+      setDrafts((ds) => ({ ...ds, [messageTargetKey(item)]: { text: payload.text, message_id: payload.message_id } }));
       void delivery.message(payload);
     },
     [delivery],
   );
 
-  const renderMessage = (item: BoardItem) => (
+  const renderMessage = (item: MessageTarget) => (
     <MessageAssistant
       item={item}
-      draft={drafts[itemKey(item)]}
-      latest={latest.get(itemKey(item))}
+      draft={drafts[messageTargetKey(item)]}
+      latest={latest.get(messageTargetKey(item))}
       webhookConfigured={Boolean(WEBHOOK_URL)}
       onOpen={openComposer}
       onText={typeDraft}
@@ -385,7 +393,7 @@ export default function App({ prsPanel }: { prsPanel?: HTMLElement | null }) {
         </section>
 
         <aside className="glance">
-          <TodoList />
+          <TodoList renderMessage={renderMessage} />
         </aside>
       </main>
 

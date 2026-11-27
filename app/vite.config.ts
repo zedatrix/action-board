@@ -69,7 +69,7 @@ const isStr = (v: unknown): v is string => typeof v === "string";
 const isStrOrList = (v: unknown) => isStr(v) || (Array.isArray(v) && v.every(isStr));
 
 // Events the /__ab/webhook fallback forwards; anything else is refused.
-export const WEBHOOK_EVENTS = new Set(["decision.answered", "item.message", "decision.clarify", "decision.not_relevant"]);
+export const WEBHOOK_EVENTS = new Set(["decision.answered", "item.message", "todo.message", "decision.clarify", "decision.not_relevant"]);
 
 const isOutcome = (b: Record<string, unknown>) =>
   (b.http === null || Number.isInteger(b.http)) &&
@@ -92,6 +92,10 @@ export function deliveryLogEntry(body: unknown): Record<string, unknown> | null 
     if (!isId(b.message_id) || !isId(b.item_id) || !isId(b.item_section)) return null;
     const { message_id, item_id, item_section } = b;
     return { event: "item.message", message_id, item_id, item_section, http, via, attempt, status, at };
+  }
+  if (b.event === "todo.message") {
+    if (!isId(b.message_id) || !isId(b.todo_id)) return null;
+    return { event: b.event, message_id: b.message_id, todo_id: b.todo_id, http, via, attempt, status, at };
   }
   // "Explain this better" and "Not relevant anymore": the id only, never the question or context text.
   if (b.event === "decision.clarify" || b.event === "decision.not_relevant") {
