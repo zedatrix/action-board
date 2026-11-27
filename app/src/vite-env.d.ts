@@ -5,4 +5,6 @@ interface ImportMetaEnv {
   readonly ACTION_BOARD_WEBHOOK_AUTH?: string;
   readonly ACTION_BOARD_ASSISTANT_NAME?: string;
   readonly ACTION_BOARD_TIMEZONE?: string;
+  readonly ACTION_BOARD_PR_REPOS?: string;
+  readonly ACTION_BOARD_GITHUB_LOGIN?: string;
 }

@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { board } from "../src/data/board";
+import { parseBoardSource } from "../src/data/parse";
 
 const FILE = fileURLToPath(new URL("../src/data/board.ts", import.meta.url));
 const START = "/* BOARD-JSON-START */";
@@ -45,12 +46,13 @@ function answerShapeOk(d: any, a: any): boolean {
 function checkBoard(b: any): string[] {
   const errors: string[] = [];
   const need = (ok: boolean, what: string) => ok || errors.push(what);
-  need(onlyKeys(b, ["updated_at", "decisions", "glance"]), "top-level keys");
+  // hot is the optional HOT toggle map (Board.hot), written by ab hot / ab unhot and the PRs tab flame.
+  need(onlyKeys(b, ["updated_at", "decisions", "glance", "hot"]), "top-level keys");
   need(isIso(b.updated_at), "updated_at");
   need(Array.isArray(b.decisions), "decisions array");
   for (const d of b.decisions ?? []) {
     need(
-      onlyKeys(d, ["id", "title", "card_ref", "context", "question", "details", "what_happens_after", "options", "created_at", "updated_at", "multiSelect", "allowCustom", "priority", "blocking", "blocks", "answer"]),
+      onlyKeys(d, ["id", "title", "card_ref", "link", "context", "question", "details", "what_happens_after", "options", "created_at", "updated_at", "multiSelect", "allowCustom", "priority", "blocking", "blocks", "answer"]),
       `keys of ${d.id}`,
     );
     need(d.priority === undefined || ["high", "medium", "low"].includes(d.priority), `priority of ${d.id}`);
@@ -62,6 +64,7 @@ function checkBoard(b: any): string[] {
     need(d.details === undefined || (Array.isArray(d.details) && d.details.length > 0 && d.details.every(detailOk)), `details of ${d.id}`);
     need(isStr(d.id) && isStr(d.question) && isStr(d.what_happens_after), `strings of ${d.id}`);
     need(d.card_ref === null || isStr(d.card_ref), `card_ref of ${d.id}`);
+    need(d.link === undefined || (isStr(d.link) && d.link.trim().length > 0), `link of ${d.id}`);
     need(isIso(d.created_at), `created_at of ${d.id}`);
     need(d.updated_at === undefined || isIso(d.updated_at), `updated_at of ${d.id}`);
     need(Array.isArray(d.options) && d.options.length > 0 && d.options.every((o: any) => isStr(o.id) && isStr(o.label)), `options of ${d.id}`);
@@ -103,6 +106,7 @@ describe("board.ts", () => {
     const parsed = JSON.parse(json);
     expect(checkBoard(parsed)).toEqual([]);
     expect(parsed).toEqual(board);
+    expect(parseBoardSource(text)).toEqual(parsed);
   });
 
   it("is plain data: a type import, the comment, the export and the markers", () => {
@@ -143,8 +147,10 @@ describe("board.ts", () => {
     for (const priority of ["high", "medium", "low"]) expect(checkBoard(d({ priority }, ans))).toEqual([]);
     expect(checkBoard(d({ priority: "urgent" }, ans))).toEqual(["priority of x"]);
     expect(checkBoard(d({ updated_at: "yesterday" }, ans))).toEqual(["updated_at of x"]);
-    expect(checkBoard(d({ context: "Ticket PROJ-5054 asks for an asterisk on the Address field." }, ans))).toEqual([]);
+    expect(checkBoard(d({ context: "Ticket PROJ-15054 asks for an asterisk on the Address field." }, ans))).toEqual([]);
     expect(checkBoard(d({ context: "  " }, ans))).toEqual(["context of x"]);
+    expect(checkBoard(d({ link: "https://example.com/pr/1" }, ans))).toEqual([]);
+    expect(checkBoard(d({ link: " " }, ans))).toEqual(["link of x"]);
     expect(checkBoard(d({ details: [{ label: "L", items: [] }] }, ans))).toEqual(["details of x"]);
   });
 

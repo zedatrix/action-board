@@ -6,12 +6,12 @@ set -euo pipefail
 cd "$(dirname "$0")/app"
 
 if ! command -v node >/dev/null 2>&1; then
-  echo "Node.js is not installed. Install Node 18 or newer (https://nodejs.org), then run ./start.sh again."
+  echo "Node.js is not installed. Install Node 22.18 or newer (https://nodejs.org), then run ./start.sh again."
   exit 1
 fi
-major="$(node -p 'process.versions.node.split(".")[0]')"
-if [ "$major" -lt 18 ]; then
-  echo "Node $(node -v) is too old. Install Node 18 or newer, then run ./start.sh again."
+supports_typescript="$(node -p 'Boolean(process.features.typescript)')"
+if [ "$supports_typescript" != true ]; then
+  echo "Node $(node -v) is too old. Install Node 22.18 or newer, then run ./start.sh again."
   exit 1
 fi
 

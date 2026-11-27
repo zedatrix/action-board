@@ -81,7 +81,6 @@ export function MessageAssistant({ item, draft, latest, webhookConfigured, onOpe
             value={text}
             readOnly={locked}
             autoFocus
-            rows={3}
             aria-label={`Message to ${ASSISTANT_NAME} about ${item.item_title}`}
             aria-describedby={`${fieldId}-hint`}
             placeholder={`What should ${ASSISTANT_NAME} know or do about this?`}

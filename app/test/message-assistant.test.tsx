@@ -3,9 +3,10 @@ import { act, cleanup, fireEvent, render, screen, within } from "@testing-librar
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Board } from "../src/data/types";
 import { MESSAGES_KEY, STORAGE_KEY } from "../src/delivery";
+import { withPrs } from "./board-with-prs";
 
 const HOOK = "http://hook.test/assistant";
-const PR = "https://github.com/acme/example-web/pull/1461";
+const PR = "https://github.com/acme/example-web/pull/11461";
 
 const decision = (id: string) => ({
   id,
@@ -25,13 +26,13 @@ vi.mock("../src/data/board", () => ({
     decisions: [decision("one"), decision("two")],
     glance: {
       waiting: [
-        { title: "Error, not success, on failed checkout actions (#1461)", who: "Riley's rescoring", link: PR },
+        { title: "Error, not success, on failed checkout actions (#11461)", who: "Riley's rescoring", link: PR },
         { title: "QA pass on the banner", who: "QA" },
       ],
       // The first ticket has no id and the same link as the first waiting item: same item_id, different section.
       tickets: [
         { id: "", title: "Out-of-scope extras on the banner", status: "To Do", link: PR },
-        { id: "PROJ-5067", title: "Align weeks to the Friday cutoff", status: "In Progress", link: "https://example.com/tickets/PROJ-5067" },
+        { id: "PROJ-15067", title: "Align weeks to the Friday cutoff", status: "In Progress", link: "https://example.com/tickets/PROJ-15067" },
       ],
     },
   } satisfies Board,
@@ -75,9 +76,11 @@ const root = (id: string, section: string) =>
 const messages = () => JSON.parse(window.localStorage.getItem(MESSAGES_KEY) ?? "{}");
 const shownDecisions = () => [...document.querySelectorAll("[data-decision-id]")].map((e) => e.getAttribute("data-decision-id"));
 
+// The Board and the PRs tab, where the glance items now are.
 async function renderApp() {
   const { default: App } = await import("../src/App");
-  return render(<App />);
+  const BoardAndPrs = withPrs(App);
+  return render(<BoardAndPrs />);
 }
 
 async function send(el: HTMLElement, text: string) {
@@ -95,7 +98,7 @@ describe("Message your assistant", () => {
       ["waiting", PR],
       ["waiting", "waiting:qa-pass-on-the-banner"],
       ["tickets", PR],
-      ["tickets", "PROJ-5067"],
+      ["tickets", "PROJ-15067"],
     ]);
     for (const r of roots) {
       const btn = within(r).getByRole("button", { name: /^Message your assistant about/ });
@@ -148,7 +151,7 @@ describe("Message your assistant", () => {
       event: "item.message",
       item_id: PR,
       item_section: "waiting",
-      item_title: "Error, not success, on failed checkout actions (#1461)",
+      item_title: "Error, not success, on failed checkout actions (#11461)",
       item_who: "Riley's rescoring",
       item_link: PR,
       text: "Ping Riley about the rescoring",
@@ -171,7 +174,7 @@ describe("Message your assistant", () => {
 
   it("a message on a glance item leaves Needs you as it was and records no answer", async () => {
     await renderApp();
-    await send(root("PROJ-5067", "tickets"), "Is this on for Friday?");
+    await send(root("PROJ-15067", "tickets"), "Is this on for Friday?");
     expect(shownDecisions()).toEqual(["one", "two"]);
     expect(screen.getByRole("heading", { name: /Needs you\s*2/ })).toBeTruthy();
     expect(window.localStorage.getItem(STORAGE_KEY)).toBeNull();
@@ -182,7 +185,7 @@ describe("Message your assistant", () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     statuses = [500, 500, 500, 200];
     await renderApp();
-    const ticket = root("PROJ-5067", "tickets");
+    const ticket = root("PROJ-15067", "tickets");
     await send(ticket, "Is this on for Friday?");
     expect(ticket.querySelector(".msg-status")!.textContent).toBe("Not sent yet, retrying");
     expect(within(ticket).getByRole("textbox")).toBeTruthy();
@@ -196,7 +199,7 @@ describe("Message your assistant", () => {
     expect(posted).toHaveLength(4);
     expect(ticket.querySelector(".msg-status")!.textContent).toMatch(/^Sent to your assistant/);
     expect(within(ticket).queryByRole("textbox")).toBeNull();
-    expect(JSON.parse(String(posted[3].init.body))).toMatchObject({ item_id: "PROJ-5067", item_status: "In Progress" });
+    expect(JSON.parse(String(posted[3].init.body))).toMatchObject({ item_id: "PROJ-15067", item_status: "In Progress" });
   });
 
   it("flushes a failed message stored by an earlier page load", async () => {

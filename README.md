@@ -11,9 +11,9 @@ order to do things in.
 
 ## Screenshots
 
-All three show the example data that ships in `app/src/data/`.
+The screenshots use bundled example data.
 
-The Board tab on a desktop: open decisions grouped by priority on the left, the "at a glance" lists on the right.
+The Board tab on a desktop: open decisions grouped by priority.
 
 ![The Board tab on a desktop](docs/screenshots/board-desktop.png)
 
@@ -32,6 +32,7 @@ The Board tab on a phone (390px wide).
 - [Requirements and install](#requirements-and-install)
 - [Configuration](#configuration)
 - [Keeping it running](#keeping-it-running)
+- [Desktop app](#desktop-app)
 - [Architecture](#architecture)
 - [The CLI contract: bin/ab.mjs](#the-cli-contract-binabmjs)
 - [How a CoS bot raises a decision and builds its chat card](#how-a-cos-bot-raises-a-decision-and-builds-its-chat-card)
@@ -80,20 +81,30 @@ project tab, no hash means the Board. Arrow keys, Home and End move between tabs
 - **Answering on the page.** The card disappears right away, a toast says "Answered: Approve", the answer is kept
   in the browser (localStorage) and sent to the webhook as `decision.answered`. The answer becomes permanent when the
   CoS bot records it with `ab answer`. Until then the browser hides the card on its own.
-- **The glance strip** (beside the queue on wide screens, under it on narrow ones), three panels with counts:
-  - **Waiting on others**: things the user is waiting on. Each row shows the title and who it waits on.
-  - **Others' PRs with you**: other people's pull requests that involve the user. Each row shows the title and
-    "author · who". Items whose `who` contains "review requested" come first.
-  - **Tickets with no PR yet**: the user's tickets that have no pull request. Each row shows the ticket id, title and
-    status (a status containing "review" is highlighted).
-  Each row links to its `link` (when it has one) and has a **"Message &lt;assistant&gt;"** button (the name comes from
-  `ACTION_BOARD_ASSISTANT_NAME`, default "your assistant"). It opens a composer under the row: Enter sends,
-  Shift+Enter or Cmd/Ctrl+Enter adds a new line. The note goes to the webhook as `item.message`. The row then shows
-  "Sending...", "Sent to &lt;assistant&gt; · 2:05 PM", "Not sent yet, retrying" or "Not delivered, will retry". The
-  composer closes when the note is delivered. Decision cards do not have this button.
+- **To-do** (beside the queue on wide screens, under it on narrow ones). Today includes overdue tasks. Upcoming
+  groups future due dates and undated work. Done shows recent completions. Change priority, add comments or subtasks,
+  and complete or reopen items in place. Quick add understands dates, times and priority, for example
+  `call the vendor Friday 3pm p1`. Due dates and times use America/New_York.
 - **Footer**: "Board updated" and the board file's `updated_at`.
 - **Live updates.** The page follows the board file. Any change made with `bin/ab.mjs` (or by hand) shows on every
   open tab within about a second, with no reload, and typed text is kept.
+
+### The PRs tab
+
+The top grid has **Hotfixes**, **Non-project PRs**, **Project PRs** and **Tickets with no PR yet**. **Review requests**
+and **Other repos** span the width below. A matching GitHub feed entry adds CI status, review blockers, each
+reviewer's state, labels, and open human review threads. Expand a PR to read its reviewers and thread comments.
+Click the flame to toggle HOT. Within each section, HOT items come first, then the oldest PRs by GitHub creation
+time. Entries without a creation time keep their file order at the end of their HOT group.
+
+The tab starts with the lists written by `ab glance`. The server joins GitHub details by PR URL. Review requests
+come from the author and signed-in viewer. Other repos are GitHub repos outside `ACTION_BOARD_PR_REPOS` when that
+setting is populated. Hotfixes target a main, master, release or hotfix branch, or come from a hotfix branch.
+Project PRs target the `project` branch, with a `project/` head or a title like `Project FE-12: Preview banner` as
+a fallback for entries without a base branch.
+
+Each entry links to its source and has a **Message &lt;assistant&gt;** button. Enter sends a note as `item.message`.
+Shift+Enter or Cmd/Ctrl+Enter adds a line. The composer closes after delivery.
 
 ### The project tab
 
@@ -103,10 +114,16 @@ Above it: "Left includes in progress. Duplicate and canceled tickets excluded.",
 time, and a link to the parent ticket or project. It updates within a second when `ab project-refresh` rewrites the
 file.
 
+### Tab shortcuts
+
+Cmd+1 opens Board, Cmd+2 opens PRs, and Cmd+3 opens the project tab. The shortcuts pause while a text field has
+focus. Arrow keys, Home and End select tabs when the tab bar has focus. The PRs and project tabs can be opened
+directly with `#prs` and `#project`.
+
 ## Requirements and install
 
 - macOS or Linux.
-- Node.js 18 or newer, with npm (check with `node -v`).
+- Node.js 22.18 or newer, with npm (check with `node -v`).
 - A current browser. Chrome, Edge and Firefox resolve any `*.localhost` name to this machine, so the default address
   `http://board.localhost:8085` needs no setup. `http://localhost:8085` and `http://127.0.0.1:8085` always work too.
 - Optional, for the browser end to end checks only: Google Chrome.
@@ -128,7 +145,7 @@ the user's real data through `bin/ab.mjs` (see [The CLI contract](#the-cli-contr
 
 ## Configuration
 
-All settings live in `app/.env.local` (created by `start.sh`, ignored by git). A variable set in the shell
+Board settings live in `app/.env.local` (created by `start.sh`, ignored by git). A variable set in the shell
 environment wins over the file. **Restart the board after any change** (see
 [Keeping it running](#keeping-it-running)), then reload the page.
 
@@ -140,6 +157,10 @@ environment wins over the file. **Restart the board after any change** (see
 | `ACTION_BOARD_TIMEZONE` | `America/New_York` | IANA time zone for card times, the header date and the project tab's "Last updated". |
 | `ACTION_BOARD_HOST` | `board.localhost` | The host name the board answers on, besides `localhost` and `127.0.0.1` (always allowed). Also used in the chat card footer. |
 | `ACTION_BOARD_PORT` | `8085` | The port. `bin/ab.mjs` reads it too, to find the live board. |
+| `ACTION_BOARD_PR_REPOS` | empty | Comma-separated GitHub owner/repo names, for example `acme/example-api,acme/example-web`. An empty list disables GitHub requests. |
+| `ACTION_BOARD_GITHUB_LOGIN` | empty | Optional viewer login when the feed has yet to return a viewer. |
+| `ACTION_BOARD_FEED` | enabled when repos are set | Set to `off` to disable GitHub requests while keeping the repo grouping. |
+| `GITHUB_TOKEN` | GitHub CLI login | Set in the server's environment to authenticate the GraphQL requests. If unset, the feed reads the CLI credential with `gh auth token`. Sign in first with `gh auth login`. The token stays on the server. |
 
 Example `app/.env.local`:
 
@@ -150,6 +171,7 @@ ACTION_BOARD_ASSISTANT_NAME=Ada
 ACTION_BOARD_TIMEZONE=America/Los_Angeles
 ACTION_BOARD_HOST=board.localhost
 ACTION_BOARD_PORT=8085
+ACTION_BOARD_PR_REPOS=acme/example-api,acme/example-web
 ```
 
 ### Optional host mapping
@@ -251,6 +273,21 @@ curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8085/__ab/board   # 20
 
 `node bin/ab.mjs check` also reports "live board not reachable" when the server is down.
 
+## Desktop app
+
+Install Electron in `desktop/` with `npm ci`, then run `npm start` from that directory. The app opens the local board,
+shows the open decision count on the Dock, and sends a notification for each new decision after the first sync.
+Cmd/Ctrl+Shift+A toggles the window. The **Go** menu shares the board's tab shortcuts.
+
+On macOS the packaged app registers a login item and starts hidden at login. Run `npm run package` in `desktop/`
+to build and ad-hoc sign the Apple Silicon app under `desktop/dist/`. The app uses the existing server when it is
+running, then tries the launchd job and the local Vite install. Set `ACTION_BOARD_HOME` if the packaged app should
+find the checkout somewhere other than `~/action-board`. Set `ACTION_BOARD_URL` to override the default loopback
+URL. The app uses `ACTION_BOARD_PORT` or the port in `app/.env.local` when present.
+
+The icon is built from `desktop/icon/action-board-icon.svg`. To regenerate the checked-in icon files offline, run
+`npm run icon` in `desktop/` with FFmpeg and its librsvg decoder installed.
+
 ## Architecture
 
 - **No database.** The data is two source files:
@@ -258,7 +295,7 @@ curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8085/__ab/board   # 20
     `/* BOARD-JSON-END */`.
   - `app/src/data/project.ts`: the project tab, as JSON between `/* PROJECT-JSON-START */` and `/* PROJECT-JSON-END */`.
   `bin/ab.mjs` is the only supported writer. It validates input, takes a lock, stamps times, and replaces the file
-  atomically (temp file, fsync, rename).
+  via an atomic replace (temp file, fsync, rename).
 - **One server.** The Vite dev server (`npx vite` in `app/`, started by `start.sh`) serves the React page and the
   board's own routes. It binds to `127.0.0.1` only.
 - **Live feed.** The server watches `board.ts` (a directory watch plus a 500 ms stat poll, 100 ms debounce), keeps
@@ -278,7 +315,13 @@ methods.
 | Method and path | Purpose | Replies |
 | --- | --- | --- |
 | `GET` / `HEAD /__ab/board` | The current board as JSON. | 200; 503 before the first good parse. |
-| `GET` / `HEAD /__ab/events` | Server-Sent Events: `event: board` with the board JSON on connect and on every change, `: ping` every 15 s. | 200 stream; 503 before the first good parse. |
+| `GET` / `HEAD /__ab/todos` | The current to-do list as JSON. | 200; 503 before the first good parse. |
+| `GET` / `HEAD /__ab/feed` | The last GitHub PR feed snapshot, with status and quota. | 200. |
+| `GET` / `HEAD /__ab/events` | Server-Sent Events for `board`, `todos`, and `feed`; a ping every 15 s. | 200 stream; 503 before the first good board parse. |
+| `POST /__ab/feed/refresh` | Requests a feed refresh subject to debounce, quota and backoff. | 200 with the start status. |
+| `POST /__ab/todo` | Runs a to-do mutation through `ab`. | 200; 400 invalid input; 404 unknown id. |
+| `POST /__ab/hot` | Body `{"url":"<PR URL>","hot":true}`. Saves a HOT mark through `ab`. | 200; 400 invalid input. |
+| `GET /__ab/hot-log` | HOT changes, optionally filtered by an ISO `since` timestamp. | 200; 400 invalid input. |
 | `POST /__ab/webhook` | Fallback forwarder. Forwards the body unchanged to `ACTION_BOARD_WEBHOOK_URL` with `ACTION_BOARD_WEBHOOK_AUTH` as `Authorization` (both read from `.env.local` on each request). Accepts only the events `decision.answered`, `item.message`, `decision.clarify`, `decision.not_relevant`. Body up to 64 KB. 15 s timeout. | 200 `{"status":<receiver HTTP status>}`; 400 `{"status":null}` bad JSON or event; 503 no webhook URL; 502 receiver unreachable. Never echoes the URL or auth. |
 | `POST /__ab/delivery-log` | The page reports each webhook attempt; one sanitized JSON line is appended to `app/.delivery-log.jsonl`. Body up to 8 KB. | 204; 400 bad report; 500 write failed. |
 | `POST /__ab/priority` | Body `{"id":"<decision id>","priority":"high"}`. Runs `ab priority <id> <level>`. Body up to 1 KB. | 200 `{"ok":true,"priority":"high"}`; 400 bad input; 404 unknown id; 409 already answered; 502 anything else. |
@@ -326,6 +369,8 @@ its own location. The examples run from the repository root.
 | --- | --- | --- |
 | `AB_FILE` | `app/src/data/board.ts` next to `bin/` | The board file. The logs live two directories up from it. |
 | `AB_PROJECT_FILE` | `project.ts` next to `AB_FILE` | The project file. |
+| `AB_TODOS_FILE` | `todos.ts` next to `AB_FILE` | The Board's to-do data file. |
+| `AB_EVENTS_FILE` | `data/events.jsonl` next to `bin/` | Append-only HOT change log. |
 | `ACTION_BOARD_PORT`, `ACTION_BOARD_HOST` | shell, then `app/.env.local`, then `8085` and `board.localhost` | Where to find the live board, and the card footer. |
 | `AB_URL` | `http://127.0.0.1:<port>` | The live board's base URL, if it differs. |
 | `AB_MAX_HIGH` | `10` | How many open high cards `open` and `check` allow before flagging a flood. A positive integer; anything else exits 2. |
@@ -355,14 +400,20 @@ Fields (anything else, including `answer` and `updated_at`, is refused with exit
 | `what_happens_after` | yes | Non-empty text: what the assistant does after the answer. Shown as "After you answer:". |
 | `options` | yes | Non-empty array of `{"id","label"}`. Ids unique and non-empty, labels non-empty. `custom` is reserved. |
 | `blocking` | yes | `true` for a blocking card (definition above), otherwise `false`. Missing or not a boolean: exit 2, `ab: blocking is required: true only if a named open PR, merge or task cannot move until this is answered, and then blocks names it; else false`. `true` stores `priority` `high` (anything blocking something is the highest priority, so it shows first): with no `priority` or `high` it is stored high, with `medium` or `low` it is refused with exit 2 (`ab: blocking cards are always high priority: ...`). A re-raise with `true` upgrades the card to high, never down; with `false` the `priority` rules below apply as before. Cards raised before this field have none (unknown) and are never an error. |
-| `blocks` | with `blocking: true` | The in-flight work the card holds up, like `"PR #1461 hired application guard merge"`. 1 to 200 characters after trimming, stored trimmed, shown on the card as "Blocks: ...". Required with `blocking: true` (missing, blank, not a string or longer: exit 2, `ab: blocking:true needs "blocks" (1 to 200 chars) naming the work it blocks: a card is blocking only when ...`); refused with `blocking: false` (exit 2, `ab: blocks is only for blocking:true cards: ...`). A re-raise with `blocking: false` drops a stored `blocks`. |
+| `blocks` | with `blocking: true` | The in-flight work the card holds up, like `"PR #43 hired application guard merge"`. 1 to 200 characters after trimming, stored trimmed, shown on the card as "Blocks: ...". Required with `blocking: true` (missing, blank, not a string or longer: exit 2, `ab: blocking:true needs "blocks" (1 to 200 chars) naming the work it blocks: a card is blocking only when ...`); refused with `blocking: false` (exit 2, `ab: blocks is only for blocking:true cards: ...`). A re-raise with `blocking: false` drops a stored `blocks`. |
 | `details` | no | Non-empty array. Each entry is a non-blank string (a bullet) or `{"label":"...","items":["...",...],"ordered":true or false}` (a labeled list, `ordered` optional). |
 | `multiSelect` | no | `true` or `false` (default `false`). `true`: several options can be picked. |
 | `allowCustom` | no | `true` or `false` (default `true`). `false` hides the free text answer and refuses `ab answer --custom`. |
 | `priority` | no | `high`, `medium` or `low`. Left out: a new card has none (counts as medium) and a re-raise keeps the stored one. A blocking card is always `high` (see `blocking`). |
 | `card_ref` | no | A string or `null`. A reference shown at the bottom of the card; a bare URL becomes a link. |
-| `link` | no | Card only alias: fills `card_ref` when `card_ref` is not given. Not stored itself. |
+| `link` | no | A stored evidence URL for the Board and chat card. Fills an absent `card_ref`. |
 | `created_at` | no | ISO time. Used only for a new card (or an old card that has none); default now. |
+
+The link guard checks GitHub and Linear references on every raise. GitHub links use
+`https://github.com/<owner>/<repo>/pull/<number>` and Linear links use
+`https://linear.app/<workspace>/issue/<key>`. When `card_ref` is a bare PR number, a named repo and number, or a
+ticket key, a supplied `link` must match it. A bare reference can stand alone. An invalid or mismatched reference
+exits 2 before changing the board.
 
 Refusals with exit 4: the id was cleared before ("use a new id only for a genuinely new decision"), or the id is
 already answered.
@@ -469,7 +520,7 @@ cards stay high`), 4 if the decision is answered, 5 for an unknown id. The page'
 
 ### glance
 
-Replaces all three glance lists at once. Input is a JSON object on stdin.
+Replaces all three PR tab lists at once. Input is a JSON object on stdin.
 
 ```sh
 node bin/ab.mjs glance < glance.json
@@ -491,14 +542,27 @@ node bin/ab.mjs glance < glance.json
 
 - `waiting` (required array): `{"title","who","link"?}`. `who` says who or what it waits on.
 - `tickets` (required array): `{"id","title","status","link"?}`.
-- `others` (optional, missing means `[]`): exactly `{"title","author","who","link"}`, all non-blank strings, `link`
-  starting with `http://` or `https://`. Put "review requested" in `who` when the user's review is requested, so the
-  row sorts first.
-- `ab` checks only that `waiting` and `tickets` are arrays; keep their items to the shapes above.
+- `others` (optional, missing means `[]`): `{"title","author","who","link"}`, all non-blank strings, with `link`
+  starting with `http://` or `https://`.
+- The PR items in `waiting` and `others` can also carry branch names `base` and `head`, and a boolean `hot`.
+  An explicit HOT toggle overrides a mark supplied by a glance update.
 - A `parked` key is retired: an empty list is accepted and dropped, a non-empty one is refused (raise those as
   decisions).
 
 Output: `{"ok":true,"live":true,"counts":{"waiting":1,"tickets":1,"others":1}}`.
+
+### hot and unhot
+
+Toggle the mark on a GitHub PR URL. Add `--by assistant` to record who changed it. An unchanged mark is a no-op.
+A changed mark is saved on the board and appended to the HOT event log.
+
+```sh
+node bin/ab.mjs hot https://github.com/acme/example-api/pull/11764
+```
+
+```sh
+node bin/ab.mjs unhot https://github.com/acme/example-api/pull/11764
+```
 
 ### open and check
 
@@ -610,6 +674,39 @@ The data file shape (`app/src/data/project.ts`):
 
 To start the user's real project, send `title`, `parent` and every milestone with its `key`, `title` and `url` once;
 later refreshes only need the ids and counts.
+
+### To-do commands
+
+The mutation commands take a JSON object as an argument or on stdin. `todo-add` takes a name or quick-add text.
+Explicit fields win over parsed quick-add fields. Priority defaults to medium and the id is generated when omitted.
+Use a top-level item's id as `parent_id` to add a subtask. Due dates use Eastern wall time.
+
+```sh
+node bin/ab.mjs todo-add '{"id":"call-vendor","quick":"call the vendor Friday 3pm p1"}'
+```
+
+```sh
+node bin/ab.mjs todo-update '{"id":"call-vendor","description":"Ask about the lease renewal","priority":"high","due":{"date":"2026-12-01","time":"09:30"}}'
+```
+
+```sh
+node bin/ab.mjs todo-comment '{"id":"call-vendor","text":"Left a voicemail at 3:05"}' --author Assistant
+```
+
+```sh
+node bin/ab.mjs todo-list --view today
+```
+
+```sh
+node bin/ab.mjs todo-done '{"id":"call-vendor"}'
+```
+
+```sh
+node bin/ab.mjs todo-reopen '{"id":"call-vendor"}'
+```
+
+Use `null` to clear an item's description, due date, or parent. Completing a parent leaves its subtasks open.
+`todo-list` also supports `upcoming`, `done`, and `all` (the default). Invalid input exits 2 and unknown ids exit 5.
 
 ## How a CoS bot raises a decision and builds its chat card
 
@@ -871,7 +968,7 @@ Reply with the totals line from the output.
 | Assistant name, time zone, host, port | `app/.env.local` (see [Configuration](#configuration)). |
 | Board title in the header and the browser tab | `app/src/App.tsx` (the `wordmark` heading) and `app/index.html` (`<title>`). |
 | Tabs: rename, add, remove | `app/src/Tabs.tsx`: the `TABS` list, the `#hash` handling in `fromHash` and `select`, and one `tabpanel` per tab. A new tab is a component like `app/src/ProjectTab.tsx`. The project tab's label is the `title` in `app/src/data/project.ts`. |
-| Glance sections (titles, fields, add one) | Panels in `GlanceStrip` in `app/src/App.tsx`; item types and `Board.glance` in `app/src/data/types.ts`; the shape check in `app/src/data/parse.ts`; the section names in `app/src/messages.ts` (`GlanceSection`, `glanceItemId`); the `glance` command and counts in `bin/ab.mjs`; the board shape test in `app/test/board-file.test.ts`. Sorting of "others" is `app/src/others.ts`. |
+| Glance sections (titles, fields, add one) | Panels in `app/src/PrsTab.tsx`; item types and `Board.glance` in `app/src/data/types.ts`; the shape check in `app/src/data/parse.ts`; the section names in `app/src/messages.ts` (`GlanceSection`, `glanceItemId`); the `glance` command and counts in `bin/ab.mjs`; the board shape test in `app/test/board-file.test.ts`. Sorting and grouping are in `app/src/prs.ts`. |
 | Project data shape (columns, fields) | `Project` types in `app/src/data/types.ts`; the data in `app/src/data/project.ts`; columns and totals in `app/src/project.ts`; the table in `app/src/ProjectTab.tsx`; validation in `projectData` in `bin/ab.mjs`. |
 | Decision card layout and wording | `app/src/DecisionCard.tsx`. |
 | Priority levels and labels | `app/src/priority.ts` (page) and `PRIORITIES` in `bin/ab.mjs` (CLI). |
@@ -887,6 +984,7 @@ After a change, run the tests below.
 ```bash
 cd app && npm ci && npx tsc --noEmit && npx vitest run   # type check and unit, component and server tests
 cd .. && bash bin/ab.test.sh                             # the CLI, against temp copies of the data files
+(cd desktop && npm ci && npm test)                       # the desktop badge, notifications and Go menu
 ```
 
 What the vitest files cover (`app/test/`):
@@ -902,7 +1000,9 @@ What the vitest files cover (`app/test/`):
 | `delivery.test.ts`, `delivery-log.test.ts` | Webhook delivery, retries, fallback, and the delivery log. |
 | `middleware.test.ts`, `priority-route.test.ts`, `clear-route.test.ts` | The server routes and their host, origin and content checks. |
 | `live.test.ts`, `live-board.test.tsx` | The file watcher, SSE feed and live page updates. |
-| `tabs.test.tsx`, `project.test.tsx` | Tabs and the project tab. |
+| `tabs.test.tsx`, `tab-keys.test.ts`, `project.test.tsx` | Tab navigation, shortcuts and the project tab. |
+| `feed.test.ts`, `prs.test.ts`, `prs-feed-ui.test.tsx`, `prs-hot.test.tsx`, `hot-route.test.ts`, `link-guard.test.ts` | GitHub feed, PR grouping and details, HOT changes, and evidence link validation. |
+| `todo-ui.test.tsx`, `todo-route.test.ts`, `todos.test.ts`, `quickadd.test.ts` | To-do actions, views, dates and quick add. |
 | `config.test.tsx`, `server-config.test.ts` | Assistant name, time zone, host and port settings. |
 
 Browser end to end checks (need Google Chrome; set `CHROME_PATH` if it is not in the default place):
@@ -913,13 +1013,12 @@ node local-e2e.mjs      # temp copy of the app on a free port, mock receivers: a
 node live-check.mjs     # temp copy on a free port: how fast ab changes reach the page
 node webhook-check.mjs --url http://127.0.0.1:8085 --id <decision id>   # one real answer through the running board's webhook
 AB_URL=http://127.0.0.1:8085 node project-shots.mjs                       # project tab on the running board; screenshots in runs/
-AB_URL=http://127.0.0.1:8085 node readme-shots.mjs                        # read-only: retakes the README screenshots in docs/screenshots/
+node readme-shots.mjs                                               # starts an isolated sample server and saves docs/screenshots/
 ```
 
 `local-e2e.mjs` and `live-check.mjs` never touch the real data files. `webhook-check.mjs` answers a real card on the
 running board. `project-shots.mjs` runs `project-refresh` on the real `project.ts` with the counts already in it and
-then restores it byte for byte. `readme-shots.mjs` only loads the page; run it against the example data, never a real
-board, because the images are committed.
+then restores it byte for byte. `readme-shots.mjs` starts a fresh sample-mode server with bundled sample data, write routes disabled and no GitHub requests. It captures the Board, the to-do panel, the PRs tab, and the project tab.
 
 ## Security notes
 

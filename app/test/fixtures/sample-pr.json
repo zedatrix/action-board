@@ -1,0 +1,239 @@
+{
+  "viewer": {
+    "login": "alice"
+  },
+  "pullRequest": {
+    "number": 731,
+    "url": "https://github.com/acme/example-api/pull/731",
+    "repository": {
+      "name": "example-api",
+      "nameWithOwner": "acme/example-api"
+    },
+    "author": {
+      "login": "alice"
+    },
+    "headRefOid": "1111111111111111111111111111111111111111",
+    "reviewDecision": "CHANGES_REQUESTED",
+    "totalCommentsCount": 87,
+    "reviewRequests": {
+      "nodes": [
+        {
+          "requestedReviewer": {
+            "__typename": "User",
+            "login": "bob"
+          }
+        }
+      ]
+    },
+    "latestReviews": {
+      "nodes": [
+        {
+          "author": {
+            "login": "carol",
+            "__typename": "User"
+          },
+          "state": "COMMENTED",
+          "submittedAt": "2026-11-26T21:20:37Z",
+          "commit": {
+            "oid": "1111111111111111111111111111111111111111"
+          },
+          "body": ""
+        },
+        {
+          "author": {
+            "login": "cursor",
+            "__typename": "Bot"
+          },
+          "state": "COMMENTED",
+          "submittedAt": "2026-11-26T17:20:42Z",
+          "commit": {
+            "oid": "2222222222222222222222222222222222222222"
+          },
+          "body": ""
+        },
+        {
+          "author": {
+            "login": "dana",
+            "__typename": "User"
+          },
+          "state": "APPROVED",
+          "submittedAt": "2026-11-26T19:56:12Z",
+          "commit": {
+            "oid": "1111111111111111111111111111111111111111"
+          },
+          "body": "Nice"
+        }
+      ]
+    },
+    "latestOpinionatedReviews": {
+      "nodes": [
+        {
+          "author": {
+            "login": "dana",
+            "__typename": "User"
+          },
+          "state": "APPROVED",
+          "submittedAt": "2026-11-26T19:56:12Z",
+          "commit": {
+            "oid": "1111111111111111111111111111111111111111"
+          }
+        },
+        {
+          "author": {
+            "login": "bob",
+            "__typename": "User"
+          },
+          "state": "CHANGES_REQUESTED",
+          "submittedAt": "2026-11-25T22:19:46Z",
+          "commit": {
+            "oid": "3333333333333333333333333333333333333333"
+          }
+        }
+      ]
+    },
+    "reviewThreads": {
+      "totalCount": 29,
+      "nodes": [
+        {
+          "id": "thread-1",
+          "isResolved": true
+        },
+        {
+          "id": "thread-2",
+          "isResolved": true
+        },
+        {
+          "id": "thread-3",
+          "isResolved": true
+        },
+        {
+          "id": "thread-4",
+          "isResolved": true
+        },
+        {
+          "id": "thread-5",
+          "isResolved": true
+        },
+        {
+          "id": "thread-6",
+          "isResolved": true
+        },
+        {
+          "id": "thread-7",
+          "isResolved": true
+        },
+        {
+          "id": "thread-8",
+          "isResolved": true
+        },
+        {
+          "id": "thread-9",
+          "isResolved": true
+        },
+        {
+          "id": "thread-10",
+          "isResolved": true
+        },
+        {
+          "id": "thread-11",
+          "isResolved": true
+        },
+        {
+          "id": "thread-12",
+          "isResolved": true
+        },
+        {
+          "id": "thread-13",
+          "isResolved": true
+        },
+        {
+          "id": "thread-14",
+          "isResolved": true
+        },
+        {
+          "id": "thread-15",
+          "isResolved": true
+        },
+        {
+          "id": "thread-16",
+          "isResolved": true
+        },
+        {
+          "id": "thread-17",
+          "isResolved": true
+        },
+        {
+          "id": "thread-18",
+          "isResolved": true
+        },
+        {
+          "id": "thread-19",
+          "isResolved": true
+        },
+        {
+          "id": "thread-20",
+          "isResolved": true
+        },
+        {
+          "id": "thread-21",
+          "isResolved": true
+        },
+        {
+          "id": "thread-22",
+          "isResolved": true
+        },
+        {
+          "id": "thread-23",
+          "isResolved": true
+        },
+        {
+          "id": "thread-24",
+          "isResolved": true
+        },
+        {
+          "id": "thread-25",
+          "isResolved": true
+        },
+        {
+          "id": "thread-26",
+          "isResolved": true
+        },
+        {
+          "id": "thread-27",
+          "isResolved": true
+        },
+        {
+          "id": "thread-28",
+          "isResolved": true
+        },
+        {
+          "id": "thread-29",
+          "isResolved": false
+        }
+      ]
+    },
+    "title": "Summarize build alerts",
+    "baseRefName": "develop",
+    "headRefName": "feature/build-alerts"
+  },
+  "threadNodes": [
+    {
+      "id": "thread-29",
+      "comments": {
+        "nodes": [
+          {
+            "databaseId": 501,
+            "author": {
+              "login": "carol",
+              "__typename": "User"
+            },
+            "createdAt": "2026-11-26T21:20:33Z",
+            "body": "Could you add a test for a build with no alerts?",
+            "url": "https://github.com/acme/example-api/pull/731#discussion_r501",
+            "path": "test/build-alerts.test.ts"
+          }
+        ]
+      }
+    }
+  ]
+}

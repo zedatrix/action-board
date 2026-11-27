@@ -20,7 +20,20 @@ screenshots/
 *.png
 
 .DS_Store
+runs/*.json
+runs/*.log
+.env*.bak
+app/.delivery-log.jsonl
+app/.ab-log.jsonl
+app/.ab-cleared.jsonl
+app/.pr-feed.json
+app/.pr-feed.json.*.tmp
+desktop/.userdata/
+/data/
 
 # README screenshots are committed on purpose (example data only)
 !docs/screenshots/
 !docs/screenshots/*.png
+
+# Generated from the checked-in desktop icon source
+!desktop/icon/icon.png

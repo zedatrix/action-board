@@ -5,7 +5,7 @@
 // "Explain this better" on a card and checks the decision.clarify POST, Rewording..., and that a re-raise clears it.
 // Then it taps priority levels on that card and checks the queue order, the High/Medium/Low sections and the copy's board.ts (via /__ab/priority).
 // Last it taps "Not relevant anymore" on a new card E: the decision.not_relevant POST, then the clear (via /__ab/clear) from the
-// copy's board.ts with a tombstone snapshot, and E leaving the page live; without a webhook, the error and E kept.
+// copy's board.ts with a tombstone snapshot, and E leEling the page live; without a webhook, the error and E kept.
 // Never touches the real app/src/data/board.ts or app/.env.local. Prints one PASS/FAIL line per step.
 import { execFile } from "node:child_process";
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
@@ -35,6 +35,7 @@ process.env.AB_BIN = AB;
 // Keep the shell's env out of Vite's loadEnv; only the temp .env.local counts.
 delete process.env.ACTION_BOARD_WEBHOOK_URL;
 delete process.env.ACTION_BOARD_WEBHOOK_AUTH;
+process.env.ACTION_BOARD_FEED = "off";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 function assert(cond, msg) {
@@ -386,10 +387,15 @@ try {
         assert(ids.includes(A.id) && ids.includes(B.id), `cards shown: ${ids}`);
         const h2 = await page.$eval(".needs-you h2", (e) => e.textContent);
         assert(/^Needs you\s*2$/.test(h2), `heading was ${h2}`);
-        const links = await page.$$eval(".glance a.item", (as) => as.map((a) => a.target));
+        // The glance lives on the PRs tab (mounted while hidden); the Board keeps only Needs you and the to-do list.
+        assert((await page.$$("#panel-board a.item")).length === 0, "the Board should have no glance links");
+        assert((await page.$$("#panel-board .todos")).length === 1, "the Board should have the to-do list");
+        const links = await page.$$eval("#panel-prs a.item", (as) => as.map((a) => a.target));
         assert(links.length > 0 && links.every((t) => t === "_blank"), "glance links should open in a new tab");
-        const panels = await page.$$eval(".glance h3", (hs) => hs.map((h) => h.textContent.trim()));
-        assert(panels.some((t) => t.startsWith("Others' PRs with you")), `glance panels: ${panels.join(" | ")}`);
+        const panels = await page.$$eval("#panel-prs .panel h3", (hs) => hs.map((h) => h.textContent.replace(/\s+\d+$/, "").trim()));
+        assert(panels.join("|") === "Hotfixes|Non-project PRs|Project PRs|Tickets with no PR yet|Review requests|Other repos", `PRs tab sections: ${panels.join(" | ")}`);
+        const origins = await page.$$eval("#panel-prs .origin", (os) => os.map((o) => o.textContent));
+        assert(origins.every((o) => o === "Waiting on others" || o === "Others' PRs with you"), `PR origin labels: ${origins.join(" | ")}`);
         const layout = await checkClarifyLayout(page);
         const titles = await checkTitles(page, fixtures, "step 1");
         await page.evaluate(() => (window.__e2eNoReload = true));

@@ -8,10 +8,14 @@
 // the chat-card payload. No board write => no card text => no chat-only decision.
 //
 //   ab raise '<json>' | ab raise < decision.json   -> prints {"card":{...}} on success
-//     Stored fields: id, title, context, question, ... ("link" is card-only: it fills card_ref).
-//     The user must understand the card cold, so raise refuses (exit 2, board untouched) a card that does not say what it is about:
-//     "context" (required, shown first): 1 to 3 sentences, max 600 chars, at least 6 plain words besides ids (ABC-1234, #123,
-//       URLs). Say what the item is in plain words (feature or screen, not just an id) and what happened that needs the user's call.
+//     Stored fields: id, title, card_ref, link, context, question, ... ("link", when given, also fills a missing card_ref).
+//     Link guard (exit 2 "ab: raise: ...", board untouched): a card_ref or link on github.com must be exactly
+//       https://github.com/<owner>/<repo>/pull/<number>, one on linear.app https://linear.app/<workspace>/issue/<KEY-N>
+//       (either may go on with / ? #); a card_ref that is a bare PR ref (#42, example-web#42) or ticket key
+//       (PROJ-1234) must match the link (same kind, number, repo when named, key). A bare ref without a link is allowed.
+//     User must understand the card cold, so raise refuses (exit 2, board untouched) a card that does not say what it is about:
+//     "context" (required, shown first): 1 to 3 sentences, max 600 chars, at least 6 plain words besides ids (PROJ-1234, #123,
+//       URLs). Say what the item is in plain words (feature or screen, not just an id) and what happened that needs the user’s call.
 //     "question" must name the thing. Refused: "the/this/that/these/those" + ticket|tickets|pr|prs|pull request|issue|card|bug|
 //       fix|change|branch|item|one at the end, before punctuation, or before is|are|was|were|be|been|should|will|would|can|could|
 //       go|get|stay|need|needs|has|have|do|does; the word "it" anywhere; "this"/"that" at the end or before punctuation.
@@ -28,7 +32,7 @@
 //     "blocking" (required, stored): true only for a blocking card (definition above), else false. Missing or not a
 //     boolean: exit 2, board untouched. true forces priority "high": a passed "medium" or "low" is refused (exit 2), and a
 //     re-raise with true upgrades the stored priority to high. Cards raised before this field have none (unknown).
-//     "blocks" (stored trimmed): the in-flight work this card blocks, e.g. "PR #1461 hired application guard merge".
+//     "blocks" (stored trimmed): the in-flight work this card blocks, e.g. "PR #43 hired application guard merge".
 //     Required with blocking:true (non-empty after trim, max 200 chars); refused with blocking:false; else exit 2, board
 //     untouched. A re-raise with blocking:false drops it. Printed on the card and in open (null when absent).
 //     optional "priority": "high", "medium" or "low" (anything else: exit 2, board untouched). Left out: a new card is stored
@@ -55,8 +59,25 @@
 //                                                      (default 10) open high cards (a flood of high cards hides the real blockers)
 //   ab check [--chat id1,id2]                       -> same as open; exit 1 on any mismatch or problem
 //   ab glance < glance.json                         ({"waiting":[...],"tickets":[...],"others":[...]}; replaces the glance;
-//                                                      others is optional (missing = []), each exactly {title,author,who,link},
+//                                                      others is optional (missing = []), each {title,author,who,link},
 //                                                      non-blank strings, link http(s)) -> {"ok","live","counts":{waiting,tickets,others}}
+//                                                      waiting and others items may carry base, head (non-blank strings: the PR's
+//                                                      branches, for the PRs tab sections), hot (boolean), hot_by and hot_at
+//                                                      (non-blank strings). An item whose canonical PR link has an entry in the
+//                                                      board's hot map gets that entry (hot:true sets hot, hot:false drops it, plus
+//                                                      hot_by/hot_at), over any incoming hot. Other items: an explicit hot wins, else
+//                                                      an item with no hot key whose link was hot in the file keeps hot:true.
+//   ab hot <pr-url> [--by name] | ab unhot <pr-url> [--by name]
+//                                                      url: https://github.com/<owner>/<repo>/pull/<n> (a trailing / ? # is dropped:
+//                                                      that canonical URL is the key); by: letters, digits, _ or -, max 32, default
+//                                                      cli; else exit 2. Sets board.hot[url] = {hot:true|false,by,at} (unhot keeps a
+//                                                      hot:false entry so it sticks across glance refreshes) and, on every glance
+//                                                      PR with that link, sets / removes hot:true and sets hot_by, hot_at. A URL in
+//                                                      no glance list just records the entry. -> {"ok","live","section","item","mark",
+//                                                      "status":"changed"|"unchanged"} (section/item null when not in the glance;
+//                                                      waiting first). Changed: appends {"at","kind":"hot"|"unhot","url","by"} to the
+//                                                      event log after the board write; unchanged (entry already that value): no
+//                                                      write, no event.
 //   ab lint                                         -> {"ok","failing":[{"id","problems":[...]}]}: open decisions breaking
 //                                                      the title/context/question rules above, or blocking:true but not high or
 //                                                      without blocks; exit 1
@@ -78,21 +99,37 @@
 //                                                      Strict (exit 2, project.ts unchanged): milestones a non-empty array, ids
 //                                                      unique with no spaces, counts non-negative integers, in_progress <= left,
 //                                                      done + left == total. -> {"ok","milestones","totals":{done,in_progress,left,total},"updated_at"}
+//   To-do list (todos.ts, the Board's "To-do" panel). JSON from the first argument when it starts with {, else stdin.
+//   Strict: unknown keys, a blank or multi-line name over 200 chars, a priority other than urgent|high|medium|low,
+//   a due other than {"date":"YYYY-MM-DD" (a real date),"time"?:"HH:MM"} (Eastern wall clock), or a parent_id that is
+//   not a top-level to-do: exit 2, todos.ts unchanged. Unknown id: exit 5. Each prints {"ok":true,...,"todo":{...}}.
+//   ab todo-add '{"name","description"?,"priority"?,"due"?,"parent_id"?,"id"?,"quick"?}'
+//                                                      quick ("call the vendor Friday 3pm p1") is parsed by app/src/quickadd.ts, the
+//                                                      Board's parser; explicit fields win. name or quick required. priority
+//                                                      defaults to medium; id (lowercase kebab) defaults to slug(name)-<6 hex>
+//   ab todo-update '{"id",<any of name, description, priority, due, parent_id>}'   null clears description, due, parent_id
+//   ab todo-comment '{"id","text","author"?}' [--author name]   text non-blank, max 4000; author defaults to "bot"
+//   ab todo-done '{"id"}'                           sets done_at (subtasks stay as they are); already done -> "status":"already-done"
+//   ab todo-reopen '{"id"}'                         clears done_at; already open -> "status":"already-open"
+//   ab todo-list [--view today|upcoming|done|all]   -> JSON array (views as on the Board, from app/src/todos.ts; default all)
 // Exit codes: 0 ok, 1 check/lint found problems, 2 bad input (including input that is not JSON) or a corrupt file, 3 written but the live server does not
 // serve it (raise only), 4 refused (answered, cleared, or already on the board), 5 unknown id or lock timeout.
 // Stamps: a new raise sets created_at (given or now) and updated_at = created_at ("added" on the card). A re-raise replaces
 // the card in place (same slot), keeps its created_at (a given one is ignored) and sets updated_at = now; so does answer.
 // updated_at is set by ab only, so raise refuses it as input.
 // Writes are serialized by a lock dir (board.ts.lock: wait up to 10s then exit 5; stale after 30s) and replace board.ts
-// atomically (unique temp file, fsync, rename). A corrupt board (not exactly one START/END marker) is refused, exit 2.
+// in one atomic replace (unique temp file, fsync, rename). A corrupt board (not exactly one START/END marker) is refused, exit 2.
 // project-refresh uses the same lock and atomic replace on project.ts (lock project.ts.lock).
 // Env: AB_FILE (board.ts), AB_PROJECT_FILE (default project.ts next to AB_FILE), AB_URL (default
 // http://127.0.0.1:<ACTION_BOARD_PORT>), ACTION_BOARD_HOST and ACTION_BOARD_PORT (shell, then app/.env.local; defaults
 // board.localhost and 8085, used for AB_URL and the card footer), AB_MAX_HIGH (open high cards allowed before check
 // flags a flood; positive integer, default 10), AB_NO_SERVER=1 (tests).
+// A todos.ts without exactly one TODOS-JSON-START/END marker is refused by the todo commands (exit 2) and flagged by check.
+// AB_TODOS_FILE defaults to todos.ts next to AB_FILE. AB_EVENTS_FILE defaults to data/events.jsonl in the repo.
+import { randomBytes } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const FILE = process.env.AB_FILE || fileURLToPath(new URL("../app/src/data/board.ts", import.meta.url));
 const APP_DIR = path.join(path.dirname(FILE), "..", "..");
@@ -113,7 +150,12 @@ const LOG = path.join(APP_DIR, ".ab-log.jsonl");
 const A = "/* BOARD-JSON-START */", Z = "/* BOARD-JSON-END */";
 const PROJECT_FILE = process.env.AB_PROJECT_FILE || path.join(path.dirname(FILE), "project.ts");
 const PA = "/* PROJECT-JSON-START */", PZ = "/* PROJECT-JSON-END */";
-const ALLOWED = new Set(["id", "title", "card_ref", "context", "question", "what_happens_after", "details", "options", "multiSelect", "allowCustom", "priority", "blocking", "blocks", "created_at"]);
+const TODOS_FILE = process.env.AB_TODOS_FILE || path.join(path.dirname(FILE), "todos.ts");
+const DA = "/* TODOS-JSON-START */", DZ = "/* TODOS-JSON-END */";
+// The app's shared to-do code (quick-add parser, views), loaded with Node's type stripping.
+const APP_SRC = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "app", "src");
+const EVENTS_FILE = process.env.AB_EVENTS_FILE || path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "data", "events.jsonl");
+const ALLOWED = new Set(["id", "title", "card_ref", "link", "context", "question", "what_happens_after", "details", "options", "multiSelect", "allowCustom", "priority", "blocking", "blocks", "created_at"]);
 // Priority: missing (or anything else in a hand-edited file) means medium.
 const PRIORITIES = ["high", "medium", "low"];
 const isPriority = (v) => typeof v === "string" && PRIORITIES.includes(v);
@@ -164,6 +206,78 @@ function titleError(t) {
 // The stored-field rules, shared by raise and lint.
 const storedProblems = (d) => [contextError(d.context), questionError(d.question), titleError(d.title)].filter(Boolean);
 
+// Link guard (raise and re-raise). Idea and regexes from groupLinkError in Agent Board
+// (agent-board, MIT; see THIRD_PARTY_NOTICES.md), rewritten here to parse with URL.
+// A card_ref that is a bare PR ref (#123, repo#123) or ticket key (PROJ-1234) names the card; its link is "link",
+// else a card_ref that is a URL. Anything mentioning github.com / linear.app must be the exact PR / issue URL form,
+// and a link given with a bare ref must point at that same PR or ticket. Returns an error or null.
+const GH_FORM = "https://github.com/<owner>/<repo>/pull/<number>";
+const LIN_FORM = "https://linear.app/<workspace>/issue/<KEY-N>";
+const PR_REF = /^([A-Za-z0-9._-]+)?#(\d+)$/, TICKET_KEY = /^[A-Za-z][A-Za-z0-9]*-\d+$/;
+// The ref a string names: {kind:"pr",repo?,number} | {kind:"ticket",key} | null.
+function bareRef(s) {
+  const t = typeof s === "string" ? s.trim() : "";
+  const m = PR_REF.exec(t);
+  if (m) return { kind: "pr", repo: m[1] || null, number: m[2].replace(/^0+(?=\d)/, ""), text: t };
+  return TICKET_KEY.test(t) ? { kind: "ticket", key: t.toUpperCase(), text: t } : null;
+}
+// A github.com / linear.app link checked segment by segment: {kind, repo?, number?, key?} or {error}. null when the
+// string is not on (or posing as) either host.
+function parseLink(field, s) {
+  const raw = s.trim();
+  let u = null;
+  try { u = new URL(raw); } catch {}
+  const host = u ? u.hostname.toLowerCase() : "";
+  const kind = host === "github.com" ? "pr" : host === "linear.app" ? "ticket"
+    : /github\.com/i.test(raw) ? "pr" : /linear\.app/i.test(raw) ? "ticket" : null;
+  if (!kind) return null;
+  const want = field + " must be a " + (kind === "pr" ? "GitHub PR URL of the form " + GH_FORM : "Linear issue URL of the form " + LIN_FORM);
+  const bad = (why, shown = raw) => ({ error: want + ", got " + shown + " (" + why + ")" });
+  if (!u) return bad("it must start with https://");
+  if (u.username || u.password) return bad("it has credentials before the host", "a URL with user:password@");
+  if (u.protocol !== "https:") return bad("it must use https://");
+  const expectHost = kind === "pr" ? "github.com" : "linear.app";
+  if (host !== expectHost || u.port || !new RegExp("^https://" + expectHost.replace(".", "\\.") + "(?:/|$)", "i").test(raw)) return bad("the host must be exactly " + expectHost);
+  const seg = u.pathname.split("/").slice(1);
+  if (kind === "pr") {
+    if (!/^[A-Za-z0-9-]+$/.test(seg[0] || "")) return bad("the owner is missing or invalid");
+    if (!/^[A-Za-z0-9._-]+$/.test(seg[1] || "")) return bad("the repo is missing");
+    if (seg[2] !== "pull") return bad("it must be a /pull/ URL, not " + (seg[2] ? "/" + seg[2] + "/" : "a repo page"));
+    if (!/^\d+$/.test(seg[3] || "")) return bad("the PR number is missing");
+    return { kind, owner: seg[0], repo: seg[1], number: seg[3].replace(/^0+(?=\d)/, "") };
+  }
+  if (!/^[A-Za-z0-9-]+$/.test(seg[0] || "")) return bad("the workspace is missing or invalid");
+  if (seg[1] !== "issue") return bad("it must be an /issue/ URL");
+  if (!TICKET_KEY.test(seg[2] || "")) return bad("the ticket key (KEY-N) is missing");
+  return { kind, key: seg[2].toUpperCase() };
+}
+function linkError(d) {
+  const ref = bareRef(d.card_ref);
+  const urls = [["card_ref", d.card_ref], ["link", d.link]].filter(([, v]) => typeof v === "string" && !bareRef(v));
+  const parsed = {};
+  for (const [field, v] of urls) { const p = parseLink(field, v); if (p?.error) return p.error; parsed[field] = p; }
+  if (!ref || typeof d.link !== "string") return null;      // nothing to match: a bare ref without a link cannot be checked
+  const l = parsed.link, name = (k) => k === "pr" ? "a GitHub PR URL" : "a Linear issue URL";
+  const expected = ref.kind === "pr" ? GH_FORM.replace("<repo>", ref.repo || "<repo>").replace("<number>", ref.number) : "https://linear.app/<workspace>/issue/" + ref.key;
+  if (!l) return "link must be " + name(ref.kind) + " for card_ref " + ref.text + " (" + expected + "), got " + d.link.trim();
+  if (l.kind !== ref.kind) return "link is " + name(l.kind) + " but card_ref " + ref.text + " is a " + (ref.kind === "pr" ? "PR" : "ticket") + "; use " + expected;
+  if (ref.kind === "ticket") return l.key === ref.key ? null : "link ticket " + l.key + " does not match card_ref " + ref.text;
+  if (l.number !== ref.number) return "link PR number " + l.number + " does not match card_ref " + ref.text;
+  if (ref.repo && ref.repo.toLowerCase() !== l.repo.toLowerCase()) return "link repo " + l.repo + " does not match card_ref " + ref.text;
+  return null;
+}
+// The canonical https://github.com/<owner>/<repo>/pull/<n> for a PR URL (a trailing /, ?query or #fragment dropped):
+// {url} | {error} (a github.com URL the link guard refuses, or a PR sub-page like /files) | null (not a GitHub URL).
+// The key of the board's hot map, and how glance PR links are matched to it.
+function canonicalPr(s) {
+  if (typeof s !== "string") return null;
+  const p = parseLink("url", s);
+  if (!p || p.error || p.kind !== "pr") return p?.error ? p : null;
+  if (new URL(s.trim()).pathname.split("/").slice(5).some(Boolean)) return { error: "url must be a GitHub PR URL of the form " + GH_FORM + ", got " + s.trim() + " (nothing may follow the PR number but / ? #)" };
+  return { url: "https://github.com/" + p.owner + "/" + p.repo + "/pull/" + p.number };
+}
+const prKey = (link) => canonicalPr(link)?.url ?? null;
+
 // details: a non-empty array of non-blank strings or {label, items, ordered?} objects. Returns an error or null.
 function detailsError(v) {
   if (!Array.isArray(v) || !v.length) return "details must be a non-empty array (leave it out when there is nothing)";
@@ -193,7 +307,7 @@ function lock(dir = LOCK) {
   while (true) {
     try { fs.mkdirSync(dir); held = dir; return; } catch (e) { if (e.code !== "EEXIST") throw e; }
     try { if (Date.now() - fs.statSync(dir).mtimeMs > 30000) { fs.rmSync(dir, { recursive: true, force: true }); continue; } } catch {}
-    if (Date.now() > end) die(5, (dir === LOCK ? "board" : "project") + " is locked by another ab for over 10s: " + dir + " (remove it if no ab is running)");
+    if (Date.now() > end) die(5, path.basename(dir, ".lock") + " is locked by another ab for over 10s: " + dir + " (remove it if no ab is running)");
     Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50);
   }
 }
@@ -268,6 +382,81 @@ function projectData(input, old) {
   }
   return { title: input.title?.trim() ?? old.title, parent: input.parent ?? old.parent, milestones: out };
 }
+// todos.ts: the JSON between the TODOS markers. Missing file, bad markers or bad JSON: exit 2 (soft: return { error }).
+function loadTodos(soft) {
+  const bad = (m) => soft ? { error: "todos file " + m + ": " + TODOS_FILE } : die(2, "todos file " + m + ": " + TODOS_FILE + "; refusing to read or write it");
+  if (!fs.existsSync(TODOS_FILE)) return bad("not found");
+  const s = fs.readFileSync(TODOS_FILE, "utf8");
+  if (s.split(DA).length !== 2 || s.split(DZ).length !== 2) return bad("needs exactly one TODOS-JSON-START and one TODOS-JSON-END marker");
+  const i = s.indexOf(DA) + DA.length, j = s.indexOf(DZ);
+  if (j < i) return bad("has TODOS-JSON-END before TODOS-JSON-START");
+  let t; try { t = JSON.parse(s.slice(i, j)); } catch (e) { return bad("JSON does not parse (" + e.message + ")"); }
+  if (!t || typeof t !== "object" || !Array.isArray(t.items)) return bad("has no items array");
+  return { s, i, j, t };
+}
+function saveTodos({ s, i, j }, t) {
+  t.updated_at = new Date().toISOString();
+  writeAtomic(TODOS_FILE, s.slice(0, i) + "\n" + JSON.stringify(t, null, 2) + "\n" + s.slice(j));
+}
+// Loads app/src/<name> (TypeScript) through Node's type stripping, without its experimental warning.
+async function appModule(name) {
+  if (!process.features?.typescript) die(2, "this command loads app/src/" + name + " and needs Node 22.18+ or 23.6+ (type stripping); this is " + process.version);
+  const emit = process.emitWarning;
+  process.emitWarning = (w, ...a) => (String(w).includes("Type Stripping") ? undefined : emit.call(process, w, ...a));
+  return import(pathToFileURL(path.join(APP_SRC, name)).href);
+}
+const TODO_PRIORITIES = ["urgent", "high", "medium", "low"];
+const TODO_ID = /^[a-z0-9][a-z0-9-]{2,80}$/;
+const MAX_TEXT = 4000;
+// Each returns an error naming the field, or null. Strings are stored trimmed.
+function todoNameError(v) {
+  if (typeof v !== "string" || !v.trim()) return "name must be a non-blank string";
+  if (/[\r\n]/.test(v)) return "name must be one line";
+  return v.trim().length > 200 ? "name is " + v.trim().length + " chars; keep it to 200 or fewer" : null;
+}
+const textError = (k, v) => typeof v !== "string" ? k + " must be a string" : v.trim().length > MAX_TEXT ? k + " is " + v.trim().length + " chars; keep it to " + MAX_TEXT + " or fewer" : null;
+// A real calendar date: rolling it through Date.UTC gives the same day back (2026-02-30 and 2026-13-01 do not).
+const isDate = (v) => {
+  if (typeof v !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return false;
+  const [y, m, d] = v.split("-").map(Number), t = new Date(Date.UTC(y, m - 1, d));
+  return t.getUTCFullYear() === y && t.getUTCMonth() === m - 1 && t.getUTCDate() === d;
+};
+function dueError(v) {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return "due must be {\"date\":\"YYYY-MM-DD\",\"time\"?:\"HH:MM\"}";
+  for (const k of Object.keys(v)) if (!["date", "time"].includes(k)) return "due has unknown key " + k + " (allowed: date, time)";
+  if (!isDate(v.date)) return "due.date must be a real calendar date written YYYY-MM-DD, like 2026-11-27";
+  if ("time" in v && !(typeof v.time === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(v.time))) return "due.time must be HH:MM (24-hour, Eastern), like 15:00";
+  return null;
+}
+const priorityError = (v) => TODO_PRIORITIES.includes(v) ? null : "priority must be urgent, high, medium or low";
+// A subtask's parent: an existing to-do that is not itself a subtask, and not the to-do itself.
+function parentError(items, pid, self) {
+  if (typeof pid !== "string" || !pid) return "parent_id must be a to-do id";
+  const p = items.find((x) => x.id === pid);
+  if (!p) return "parent_id " + pid + " is not a to-do";
+  if (p.parent_id) return "parent_id " + pid + " is a subtask itself; subtasks go one level deep";
+  if (self && pid === self.id) return "a to-do cannot be its own parent";
+  if (self && items.some((x) => x.parent_id === self.id)) return self.id + " has subtasks, so it cannot become a subtask (one level deep)";
+  return null;
+}
+// A todo command's JSON input: an object with only the allowed keys (and a non-empty id unless adding), else exit 2.
+function todoInput(name, allowed) {
+  const no = (m) => die(2, name + ": " + m);
+  if (args.length > 1 || (args.length && !args[0].trim().startsWith("{"))) no("usage: ab " + name + " '<json>' | ab " + name + " < input.json");
+  let v; try { v = JSON.parse(input()); } catch (e) { no("input is not valid JSON (" + e.message + ")"); }
+  if (!v || typeof v !== "object" || Array.isArray(v)) no("input must be a JSON object");
+  for (const k of Object.keys(v)) if (!allowed.includes(k)) no("unknown key " + k + " (allowed: " + allowed.join(", ") + ")");
+  if (name !== "todo-add" && (typeof v.id !== "string" || !v.id)) no("id is required");
+  return { v, no };
+}
+// The stored to-do for an id under the todos lock; unknown id exit 5.
+function findTodo(f, name, id) {
+  const t = f.t.items.find((x) => x.id === id);
+  return t || die(5, name + ": no to-do " + id);
+}
+// Stored key order, so todos.ts reads the same whichever command wrote it.
+const todoOrder = (t) => Object.fromEntries(["id", "name", "description", "priority", "due", "parent_id", "comments", "created_at", "updated_at", "done_at"].filter((k) => t[k] !== undefined).map((k) => [k, t[k]]));
+const slugify = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+/, "").slice(0, 40).replace(/-+$/, "") || "todo";
 const log = (o) => fs.appendFileSync(LOG, JSON.stringify({ at: new Date().toISOString(), ...o }) + "\n");
 const tombstones = () => fs.existsSync(TOMB) ? fs.readFileSync(TOMB, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)) : [];
 // The latest tombstone line for id (a clear {id, reason, at, card?} or a restore marker {id, restored, at}), or undefined.
@@ -287,6 +476,9 @@ async function waitServed(pred, ms = 4000) {
 }
 function flag(args, name) { const k = args.indexOf(name); if (k < 0) return undefined; const v = args[k + 1]; args.splice(k, 2); return v; }
 const isOpen = (d) => !d.answer;
+const PR_KEYS = ["base", "head", "hot", "hot_by", "hot_at"];
+// Writes one explicit HOT mark onto a glance PR item: hot:true sets hot, hot:false drops it; hot_by/hot_at always.
+const applyMark = (x, m) => { if (m.hot) x.hot = true; else delete x.hot; x.hot_by = m.by; x.hot_at = m.at; };
 
 const [cmd, ...args] = process.argv.slice(2);
 const input = () => (args[0] && args[0].trim().startsWith("{") ? args[0] : fs.readFileSync(0, "utf8"));
@@ -296,9 +488,12 @@ const parseInput = (text) => { try { return JSON.parse(text); } catch (e) { die(
 if (cmd === "raise") {
   const d = parseInput(input());
   if (!d || typeof d !== "object" || Array.isArray(d)) die(2, "raise: input must be a JSON object");
-  const link = d.link; delete d.link;                 // card-only field, not board schema
-  if (link && !d.card_ref) d.card_ref = link;
-  for (const k of Object.keys(d)) if (!ALLOWED.has(k)) die(2, "unknown field " + k + " (allowed: " + [...ALLOWED].join(", ") + ", link)");
+  for (const k of Object.keys(d)) if (!ALLOWED.has(k)) die(2, "unknown field " + k + " (allowed: " + [...ALLOWED].join(", ") + ")");
+  if (d.link == null) delete d.link;
+  else if (typeof d.link !== "string" || !d.link.trim()) die(2, "raise: link must be a non-blank string (a PR or issue URL) or left out");
+  else d.link = d.link.trim();
+  { const e = linkError(d); if (e) die(2, "raise: " + e); }
+  if (d.link && !d.card_ref) d.card_ref = d.link;     // the board shows card_ref as the card's evidence link
   if (!/^[a-z0-9][a-z0-9-]{2,80}$/.test(d.id || "")) die(2, "id must be lowercase-kebab, 3-81 chars");
   if (!d.question || !d.what_happens_after) die(2, "need question and what_happens_after in plain words");
   if (!Array.isArray(d.options) || !d.options.length) die(2, "need at least one option");
@@ -341,7 +536,7 @@ if (cmd === "raise") {
   console.log(JSON.stringify({ ok: true, board: "live", card: {
     title, context: d.context, question: d.question, ...(d.details ? { details: detailsText(d.details) } : {}), what_happens_after: d.what_happens_after,
     options: d.options.map((o) => o.label), multiSelect: !!d.multiSelect, allowCustom: d.allowCustom !== false,
-    link: d.card_ref, decision_id: d.id, priority: priorityOf(d), blocking: d.blocking, blocks: d.blocks ?? null,
+    link: d.link ?? d.card_ref, decision_id: d.id, priority: priorityOf(d), blocking: d.blocking, blocks: d.blocks ?? null,
     footer: "Also on your Action Board: http://" + HOST + ":" + PORT + " (" + d.id + ")" } }, null, 2));
 } else if (cmd === "answer") {
   const by = flag(args, "--by"), at = flag(args, "--at") || new Date().toISOString(), custom = flag(args, "--custom");
@@ -408,21 +603,72 @@ if (cmd === "raise") {
   for (const k of ["waiting", "tickets"]) if (!Array.isArray(g[k])) die(2, "glance." + k + " must be an array");
   if ("parked" in g && !Array.isArray(g.parked)) die(2, "glance.parked must be an array");
   if (g.parked?.length) die(2, "glance.parked is retired: raise those as decisions with \"ab raise\" instead");
-  // others: someone else's PR involving the user. Missing means []; each item is exactly {title, author, who, link}.
+  // others: someone else's PR involving User. Missing means []; each item is {title, author, who, link} plus the PR fields.
   const others = g.others ?? [];
   if (!Array.isArray(others)) die(2, "glance.others must be an array");
   const OTHER_KEYS = ["title", "author", "who", "link"];
+  // base, head and hot are optional on every PR item (waiting and others).
+  const prFields = (o, at) => {
+    for (const k of ["base", "head"]) if (k in o && (typeof o[k] !== "string" || !o[k].trim())) die(2, at + "." + k + " must be a non-blank string (a branch name)");
+    if ("hot" in o && typeof o.hot !== "boolean") die(2, at + ".hot must be true or false");
+    for (const k of ["hot_by", "hot_at"]) if (k in o && (typeof o[k] !== "string" || !o[k].trim())) die(2, at + "." + k + " must be a non-blank string");
+  };
   others.forEach((o, n) => {
     const at = "glance.others[" + n + "]";
     if (!o || typeof o !== "object" || Array.isArray(o)) die(2, at + " must be an object {title, author, who, link}");
-    for (const k of Object.keys(o)) if (!OTHER_KEYS.includes(k)) die(2, at + " has unknown key " + k);
+    for (const k of Object.keys(o)) if (![...OTHER_KEYS, ...PR_KEYS].includes(k)) die(2, at + " has unknown key " + k);
     for (const k of OTHER_KEYS) if (typeof o[k] !== "string" || !o[k].trim()) die(2, at + "." + k + " must be a non-blank string");
     if (!/^https?:\/\//.test(o.link)) die(2, at + ".link must start with http:// or https://");
+    prFields(o, at);
   });
-  lock(); const f = load(); f.b.glance = { waiting: g.waiting, tickets: g.tickets, others };
+  g.waiting.forEach((w, n) => { if (w && typeof w === "object") prFields(w, "glance.waiting[" + n + "]"); });
+  lock(); const f = load();
+  // A routine refresh must not wipe hot markers: an item without a hot key keeps hot:true if its link was hot.
+  const hotLinks = new Set([...(f.b.glance?.waiting ?? []), ...(f.b.glance?.others ?? [])].filter((x) => x?.hot === true && x.link).map((x) => x.link));
+  // The hot map (ab hot / ab unhot) wins over both: an explicit unhot sticks against a glance that re-hots the PR,
+  // an explicit hot against one that leaves it out.
+  const marks = f.b.hot && typeof f.b.hot === "object" ? f.b.hot : {};
+  for (const x of [...g.waiting, ...others]) {
+    if (!x || typeof x !== "object") continue;
+    const m = Object.hasOwn(marks, prKey(x.link) ?? "") ? marks[prKey(x.link)] : null;
+    if (m) applyMark(x, m);
+    else if (!("hot" in x) && hotLinks.has(x.link)) x.hot = true;
+  }
+  f.b.glance = { waiting: g.waiting, tickets: g.tickets, others };
   const u = save(f, f.b); const live = await waitServed((b) => b.updated_at === u);
   log({ op: "glance", live });
   console.log(JSON.stringify({ ok: true, live, counts: { waiting: g.waiting.length, tickets: g.tickets.length, others: others.length } }));
+} else if (cmd === "hot" || cmd === "unhot") {
+  const usage = "usage: ab " + cmd + " <pr-url> [--by name]";
+  const hasBy = args.includes("--by"), by = hasBy ? flag(args, "--by") : "cli";
+  if (!/^[A-Za-z0-9_-]{1,32}$/.test(by ?? "")) die(2, cmd + ": --by must be 1 to 32 letters, digits, _ or -");
+  if (args.length !== 1) die(2, usage);
+  const c = canonicalPr(args[0]);
+  if (!c) die(2, usage + " (" + GH_FORM + ")");
+  if (c.error) die(2, cmd + ": " + c.error);
+  const url = c.url, hot = cmd === "hot";
+  lock(); const f = load();
+  // Glance PRs with that link (canonical match), waiting (the user’s PRs) first, then others; the first is reported.
+  const hits = ["waiting", "others"].flatMap((k) => (f.b.glance?.[k] ?? []).filter((x) => x && typeof x === "object" && prKey(x.link) === url).map((item) => ({ k, item })));
+  const section = hits[0]?.k ?? null, item = hits[0]?.item ?? null;
+  const prev = f.b.hot?.[url];
+  if (prev && prev.hot === hot) {
+    const live = await waitServed((b) => b.hot?.[url]?.hot === hot);
+    console.log(JSON.stringify({ ok: true, live, section, item, mark: prev, status: "unchanged" }));
+    process.exit(0);
+  }
+  const mark = { hot, by, at: new Date().toISOString() };
+  f.b.hot = { ...(f.b.hot && typeof f.b.hot === "object" ? f.b.hot : {}), [url]: mark };
+  for (const h of hits) applyMark(h.item, mark);
+  const u = save(f, f.b);
+  // The event log only after board.ts is written; a failed append warns but never undoes the write.
+  try {
+    fs.mkdirSync(path.dirname(EVENTS_FILE), { recursive: true });
+    fs.appendFileSync(EVENTS_FILE, JSON.stringify({ at: mark.at, kind: cmd, url, by }) + "\n");
+  } catch (e) { console.error("ab: warning: " + cmd + " written to board.ts but not to the event log " + EVENTS_FILE + ": " + e.message); }
+  const live = await waitServed((b) => b.updated_at === u);
+  log({ op: cmd, link: url, section, live });
+  console.log(JSON.stringify({ ok: true, live, section, item, mark, status: "changed" }));
 } else if (cmd === "open" || cmd === "check") {
   const chatArg = flag(args, "--chat");
   if (!Number.isInteger(MAX_HIGH) || MAX_HIGH < 1) die(2, "AB_MAX_HIGH must be a positive integer");
@@ -438,6 +684,8 @@ if (cmd === "raise") {
   const srvOpen = srv ? srv.decisions.filter(isOpen).map((d) => d.id) : null;
   const problems = fileB.decisions.filter(isOpen).flatMap((d) => [blockingError(d), blocksError(d)]).filter(Boolean);
   if (priorityOpen.high > MAX_HIGH) problems.push(priorityOpen.high + " open cards are high (limit " + MAX_HIGH + "): a flood of high cards hides the real blockers");
+  // The to-do list: a todos.ts that is there but does not load (missing markers, bad JSON) is a problem.
+  if (fs.existsSync(TODOS_FILE)) { const td = loadTodos(true); if (td.error) problems.push(td.error); }
   if (!process.env.AB_NO_SERVER) {
     if (!srv) problems.push("live board not reachable at " + URL_ + " (dev server down?)");
     else if (srv.updated_at !== fileB.updated_at) problems.push("served board is stale: file " + fileB.updated_at + " vs served " + srv.updated_at);
@@ -531,6 +779,88 @@ if (cmd === "raise") {
   const totals = Object.fromEntries(COUNTS.map((k) => [k, r.milestones.reduce((n, m) => n + m[k], 0)]));
   log({ op: "project-refresh", milestones: r.milestones.length });
   console.log(JSON.stringify({ ok: true, milestones: r.milestones.length, totals, updated_at: updated }));
+} else if (cmd === "todo-add") {
+  const { v, no } = todoInput(cmd, ["id", "name", "description", "priority", "due", "parent_id", "quick"]);
+  if (!("name" in v) && !("quick" in v)) no("give name or quick, like {\"quick\":\"call the vendor Friday 3pm\"}");
+  // quick goes through the Board's own parser; explicit fields win over what it finds.
+  let q = {};
+  if ("quick" in v) {
+    if (typeof v.quick !== "string" || !v.quick.trim()) no("quick must be a non-blank string");
+    q = (await appModule("quickadd.ts")).parseQuickAdd(v.quick);
+    if (!("name" in v) && !q.name) no("quick add needs a name besides the date and priority, like \"call the vendor Friday 3pm\"");
+  }
+  const name = v.name ?? q.name, priority = v.priority ?? q.priority ?? "medium", due = "due" in v ? v.due : q.due;
+  const e = todoNameError(name) || ("description" in v ? textError("description", v.description) : null) || priorityError(priority) || (due === undefined ? null : dueError(due));
+  if (e) no(e);
+  if ("id" in v && (typeof v.id !== "string" || !TODO_ID.test(v.id))) no("id must be lowercase kebab, 3-81 chars");
+  lock(TODOS_FILE + ".lock"); const f = loadTodos();
+  const items = f.t.items;
+  if ("parent_id" in v) { const pe = parentError(items, v.parent_id); if (pe) no(pe); }
+  const taken = new Set(items.map((x) => x.id));
+  if ("id" in v && taken.has(v.id)) no("id " + v.id + " is already a to-do");
+  let id = v.id;
+  while (!id || taken.has(id)) id = slugify(name.trim()) + "-" + randomBytes(3).toString("hex");
+  const now = new Date().toISOString();
+  const todo = todoOrder({ id, name: name.trim(), description: v.description?.trim() || undefined, priority, due, parent_id: v.parent_id, comments: [], created_at: now, updated_at: now });
+  items.push(todo); saveTodos(f, f.t); unlock();
+  log({ op: cmd, id });
+  console.log(JSON.stringify({ ok: true, todo }));
+} else if (cmd === "todo-update") {
+  const { v, no } = todoInput(cmd, ["id", "name", "description", "priority", "due", "parent_id"]);
+  if (Object.keys(v).length < 2) no("give at least one of name, description, priority, due, parent_id to change");
+  const e = ("name" in v ? todoNameError(v.name) : null) || ("description" in v && v.description !== null ? textError("description", v.description) : null)
+    || ("priority" in v ? priorityError(v.priority) : null) || ("due" in v && v.due !== null ? dueError(v.due) : null);
+  if (e) no(e);
+  lock(TODOS_FILE + ".lock"); const f = loadTodos();
+  const k = f.t.items.findIndex((x) => x.id === v.id), t = findTodo(f, cmd, v.id);
+  if ("parent_id" in v && v.parent_id !== null) { const pe = parentError(f.t.items, v.parent_id, t); if (pe) no(pe); }
+  // null (or a blank description) clears a field.
+  const next = { ...t, updated_at: new Date().toISOString() };
+  if ("name" in v) next.name = v.name.trim();
+  if ("description" in v) next.description = v.description?.trim() || undefined;
+  if ("priority" in v) next.priority = v.priority;
+  if ("due" in v) next.due = v.due ?? undefined;
+  if ("parent_id" in v) next.parent_id = v.parent_id ?? undefined;
+  f.t.items[k] = todoOrder(next); saveTodos(f, f.t); unlock();
+  log({ op: cmd, id: v.id, fields: Object.keys(v).filter((x) => x !== "id") });
+  console.log(JSON.stringify({ ok: true, todo: f.t.items[k] }));
+} else if (cmd === "todo-comment") {
+  const authorFlag = flag(args, "--author");
+  const { v, no } = todoInput(cmd, ["id", "text", "author"]);
+  if (authorFlag !== undefined) { if ("author" in v) no("give the author once: --author or \"author\", not both"); v.author = authorFlag; }
+  if (typeof v.text !== "string" || !v.text.trim()) no("text must be a non-blank string");
+  const te = textError("text", v.text); if (te) no(te);
+  if ("author" in v && (typeof v.author !== "string" || !v.author.trim() || v.author.trim().length > 100)) no("author must be a non-blank string of at most 100 chars");
+  lock(TODOS_FILE + ".lock"); const f = loadTodos();
+  const t = findTodo(f, cmd, v.id);
+  const now = new Date().toISOString();
+  const comment = { id: "c-" + randomBytes(4).toString("hex"), text: v.text.trim(), author: v.author?.trim() ?? "bot", at: now };
+  t.comments = [...(Array.isArray(t.comments) ? t.comments : []), comment]; t.updated_at = now;
+  saveTodos(f, f.t); unlock();
+  log({ op: cmd, id: v.id, comment: comment.id });
+  console.log(JSON.stringify({ ok: true, comment, todo: t }));
+} else if (cmd === "todo-done" || cmd === "todo-reopen") {
+  const { v } = todoInput(cmd, ["id"]);
+  lock(TODOS_FILE + ".lock"); const f = loadTodos();
+  const k = f.t.items.findIndex((x) => x.id === v.id), t = findTodo(f, cmd, v.id);
+  const done = cmd === "todo-done";
+  // Completing a parent leaves its subtasks as they are.
+  if (!!t.done_at === done) { console.log(JSON.stringify({ ok: true, status: done ? "already-done" : "already-open", todo: t })); process.exit(0); }
+  const now = new Date().toISOString();
+  f.t.items[k] = todoOrder({ ...t, updated_at: now, done_at: done ? now : undefined });
+  saveTodos(f, f.t); unlock();
+  log({ op: cmd, id: v.id });
+  console.log(JSON.stringify({ ok: true, status: done ? "done" : "reopened", todo: f.t.items[k] }));
+} else if (cmd === "todo-list") {
+  const view = flag(args, "--view") ?? "all";
+  if (args.length || !["today", "upcoming", "done", "all"].includes(view)) die(2, "todo-list: usage: ab todo-list [--view today|upcoming|done|all]");
+  const items = loadTodos().t.items;
+  let out = items;
+  if (view !== "all") {
+    const v = await appModule("todos.ts"), now = new Date();
+    out = view === "today" ? v.todayView(items, now) : view === "done" ? v.doneView(items) : v.upcomingView(items, now).flatMap((g) => g.items);
+  }
+  console.log(JSON.stringify(out));
 } else {
-  die(2, "usage: ab raise|answer|clear|restore|priority|glance|open|check|lint|backfill-stamps|backfill-titles|project-refresh (see header of " + process.argv[1] + ")");
+  die(2, "usage: ab raise|answer|clear|restore|priority|glance|hot|unhot|open|check|lint|backfill-stamps|backfill-titles|project-refresh|todo-add|todo-update|todo-comment|todo-done|todo-reopen|todo-list (see header of " + process.argv[1] + ")");
 }

@@ -25,6 +25,7 @@ const AB = join(ROOT, "bin/ab.mjs");
 
 delete process.env.ACTION_BOARD_WEBHOOK_URL;
 delete process.env.ACTION_BOARD_WEBHOOK_AUTH;
+process.env.ACTION_BOARD_FEED = "off";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 function assert(cond, msg) {

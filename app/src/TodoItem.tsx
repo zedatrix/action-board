@@ -1,0 +1,259 @@
+import { useState, type FormEvent, type KeyboardEvent } from "react";
+import type { Todo, TodoDue } from "./data/types";
+import { linkify } from "./linkify";
+import { etTime } from "./eastern";
+import type { Send, TodoAction } from "./todoActions";
+import { dueLabel, isDone, isOverdue, lateBy, nextPriority, subtaskProgress, subtasksOf, TODO_PRIORITIES, type TodoView } from "./todos";
+
+type Props = {
+  todo: Todo;
+  // The whole list, for subtasks.
+  items: Todo[];
+  now: Date;
+  view: TodoView;
+  expanded: boolean;
+  onToggle: (id: string) => void;
+  send: Send;
+};
+
+// One to-do: checkbox, name (tap to expand), priority chip (tap cycles), due chip, subtask progress, comment count.
+// In Today an overdue one is red with how late; in Done it shows when it was completed and a Reopen button.
+export function TodoItem({ todo, items, now, view, expanded, onToggle, send }: Props) {
+  const [busy, setBusy] = useState(false);
+  const run = async (body: TodoAction) => {
+    if (busy) return;
+    setBusy(true);
+    await send(body);
+    setBusy(false);
+  };
+  const done = isDone(todo);
+  const overdue = view === "today" && isOverdue(todo, now);
+  const late = overdue ? lateBy(todo, now) : null;
+  const progress = subtaskProgress(items, todo.id);
+  const n = todo.comments.length;
+
+  return (
+    <li className="todo" data-todo-id={todo.id} data-priority={todo.priority} data-overdue={overdue || undefined} data-done={done || undefined}>
+      <div className="todo-row">
+        <input
+          type="checkbox"
+          className="todo-check"
+          aria-label={`Complete ${todo.name}`}
+          checked={done}
+          disabled={busy}
+          onChange={() => void run({ action: done ? "reopen" : "done", id: todo.id })}
+        />
+        <button type="button" className="todo-name" aria-expanded={expanded} onClick={() => onToggle(todo.id)}>
+          {todo.priority === "urgent" && (
+            <span className="todo-urgent" title="Urgent" aria-hidden="true">
+              !
+            </span>
+          )}
+          <span className="todo-title">{todo.name}</span>
+        </button>
+        <div className="todo-chips">
+          <button
+            type="button"
+            className="todo-chip todo-prio"
+            data-level={todo.priority}
+            aria-label={`Priority ${todo.priority}, tap for ${nextPriority(todo.priority)}`}
+            disabled={busy}
+            onClick={() => void run({ action: "update", id: todo.id, priority: nextPriority(todo.priority) })}
+          >
+            {todo.priority}
+          </button>
+          {todo.due && (
+            <span className={overdue ? "todo-chip todo-due overdue" : "todo-chip todo-due"}>
+              {dueLabel(todo.due, now)}
+              {late && ` · ${late}`}
+            </span>
+          )}
+          {progress && (
+            <span className="todo-chip todo-subs" aria-label={`${progress.done} of ${progress.total} subtasks done`}>
+              {progress.done}/{progress.total}
+            </span>
+          )}
+          {n > 0 && (
+            <span className="todo-chip todo-comments" aria-label={`${n} ${n === 1 ? "comment" : "comments"}`}>
+              {n}
+            </span>
+          )}
+        </div>
+        {view === "done" && todo.done_at && (
+          <div className="todo-done">
+            <span className="todo-done-at">
+              Done <time dateTime={todo.done_at}>{etTime(todo.done_at)}</time>
+            </span>
+            <button type="button" className="not-relevant-btn todo-reopen" disabled={busy} onClick={() => void run({ action: "reopen", id: todo.id })}>
+              Reopen
+            </button>
+          </div>
+        )}
+      </div>
+      {expanded && <TodoDetails todo={todo} items={items} send={send} />}
+    </li>
+  );
+}
+
+// The expanded to-do: name, description, due, priority, subtasks and comments, each saved as it changes.
+function TodoDetails({ todo, items, send }: { todo: Todo; items: Todo[]; send: Send }) {
+  const id = todo.id;
+  // Typed but not yet saved; null shows the to-do's own value (so live updates show through).
+  const [name, setName] = useState<string | null>(null);
+  const [description, setDescription] = useState<string | null>(null);
+  const [due, setDue] = useState<{ date: string; time: string } | null>(null);
+  const [subtask, setSubtask] = useState("");
+  const [comment, setComment] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const run = async (body: TodoAction) => {
+    setBusy(true);
+    const ok = await send(body);
+    setBusy(false);
+    return ok;
+  };
+
+  const saveName = async () => {
+    if (name === null) return;
+    if (name.trim() && name.trim() !== todo.name) await run({ action: "update", id, name: name.trim() });
+    setName(null);
+  };
+  const saveDescription = async () => {
+    if (description === null) return;
+    if (description.trim() !== (todo.description ?? "")) await run({ action: "update", id, description: description.trim() || null });
+    setDescription(null);
+  };
+  const saveDue = async (next: { date: string; time: string }) => {
+    setDue(next);
+    const value: TodoDue | null = next.date ? { date: next.date, ...(next.time ? { time: next.time } : {}) } : null;
+    await run({ action: "update", id, due: value });
+    setDue(null);
+  };
+  const addSubtask = async (e: FormEvent) => {
+    e.preventDefault();
+    if (busy || !subtask.trim()) return;
+    if (await run({ action: "add", name: subtask.trim(), parent_id: id })) setSubtask("");
+  };
+  const addComment = async (e: FormEvent) => {
+    e.preventDefault();
+    if (busy || !comment.trim()) return;
+    if (await run({ action: "comment", id, text: comment.trim() })) setComment("");
+  };
+  const blurOnEnter = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") e.currentTarget.blur();
+  };
+
+  const shownDue = due ?? { date: todo.due?.date ?? "", time: todo.due?.time ?? "" };
+  const subs = todo.parent_id ? null : subtasksOf(items, id);
+
+  return (
+    <div className="todo-details">
+      <label className="todo-field">
+        <span className="todo-label">Name</span>
+        <input
+          className="custom-input"
+          value={name ?? todo.name}
+          maxLength={200}
+          onChange={(e) => setName(e.target.value)}
+          onBlur={() => void saveName()}
+          onKeyDown={blurOnEnter}
+        />
+      </label>
+      <label className="todo-field">
+        <span className="todo-label">Description</span>
+        <textarea
+          className="composer-input"
+          value={description ?? todo.description ?? ""}
+          maxLength={4000}
+          onChange={(e) => setDescription(e.target.value)}
+          onBlur={() => void saveDescription()}
+        />
+      </label>
+      <div className="todo-field-row">
+        <label className="todo-field">
+          <span className="todo-label">Due date (ET)</span>
+          <input className="custom-input" type="date" value={shownDue.date} onChange={(e) => void saveDue({ date: e.target.value, time: e.target.value ? shownDue.time : "" })} />
+        </label>
+        <label className="todo-field">
+          <span className="todo-label">Time</span>
+          <input
+            className="custom-input"
+            type="time"
+            value={shownDue.time}
+            disabled={!shownDue.date}
+            onChange={(e) => void saveDue({ date: shownDue.date, time: e.target.value })}
+          />
+        </label>
+      </div>
+      <div className="todo-field">
+        <span className="todo-label" id={`prio-${id}`}>
+          Priority
+        </span>
+        <div className="priority todo-priority" role="group" aria-labelledby={`prio-${id}`}>
+          {TODO_PRIORITIES.map((p) => (
+            <button
+              key={p}
+              type="button"
+              className={`priority-seg todo-seg-${p}`}
+              aria-pressed={todo.priority === p}
+              disabled={busy}
+              onClick={() => todo.priority !== p && void run({ action: "update", id, priority: p })}
+            >
+              {p}
+            </button>
+          ))}
+        </div>
+      </div>
+      {subs && (
+        <div className="todo-field">
+          <span className="todo-label">Subtasks</span>
+          {subs.length > 0 && (
+            <ul className="todo-subtasks">
+              {subs.map((s) => (
+                <li key={s.id} className="todo-subtask" data-todo-id={s.id} data-done={isDone(s) || undefined}>
+                  <label>
+                    <input
+                      type="checkbox"
+                      className="todo-check"
+                      checked={isDone(s)}
+                      disabled={busy}
+                      onChange={() => void run({ action: isDone(s) ? "reopen" : "done", id: s.id })}
+                    />
+                    <span>{s.name}</span>
+                  </label>
+                </li>
+              ))}
+            </ul>
+          )}
+          <form className="todo-inline-form" onSubmit={addSubtask}>
+            <input className="custom-input" aria-label="Add a subtask" placeholder="Add a subtask" value={subtask} maxLength={200} onChange={(e) => setSubtask(e.target.value)} />
+            <button type="submit" className="btn ghost" disabled={busy || !subtask.trim()}>
+              Add
+            </button>
+          </form>
+        </div>
+      )}
+      <div className="todo-field">
+        <span className="todo-label">Comments</span>
+        {todo.comments.length > 0 && (
+          <ol className="todo-thread">
+            {todo.comments.map((c) => (
+              <li key={c.id} className="todo-comment">
+                <span className="todo-comment-meta">
+                  {c.author} · <time dateTime={c.at}>{etTime(c.at)}</time>
+                </span>
+                <p>{linkify(c.text)}</p>
+              </li>
+            ))}
+          </ol>
+        )}
+        <form className="todo-inline-form" onSubmit={addComment}>
+          <input className="custom-input" aria-label="Add a comment" placeholder="Add a comment" value={comment} maxLength={4000} onChange={(e) => setComment(e.target.value)} />
+          <button type="submit" className="btn ghost" disabled={busy || !comment.trim()}>
+            Comment
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
