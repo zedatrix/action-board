@@ -4,8 +4,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Todo, Todos } from "../src/data/types";
 import { TODO_PATH, TODOS_PATH } from "../src/useLiveTodos";
 
-// Thu Nov 26 2026, 12:00 PM Eastern.
-const NOW = new Date("2026-11-26T17:00:00.000Z");
 const LATER = "2026-11-26T17:00:05.000Z";
 
 const t = (id: string, name: string, extra: Partial<Todo> = {}): Todo => ({
@@ -30,7 +28,7 @@ const fixture: Todos = {
     t("c", "Send invoice", { priority: "high", due: { date: "2026-11-26", time: "09:00" } }),
     t("d", "Plan offsite", { priority: "low", due: { date: "2026-11-28" } }),
     t("e", "Read book"),
-    t("f", "Book flights", { priority: "high", due: { date: "2026-11-27" } }),
+    t("f", "Book flights", { priority: "high", due: { date: "2026-11-27" }, parent_id: "g", created_at: "2026-11-19T12:00:00.000Z" }),
     t("g", "Old thing", { due: { date: "2026-11-20" }, done_at: "2026-11-26T15:00:00.000Z" }),
     t("h", "Older thing", { done_at: "2026-11-24T15:00:00.000Z" }),
     t("s1", "Find number", { parent_id: "b", done_at: "2026-11-26T16:00:00.000Z" }),
@@ -71,8 +69,6 @@ function reply(body: Record<string, unknown>): Todo {
 }
 
 beforeEach(() => {
-  vi.useFakeTimers({ toFake: ["Date"] });
-  vi.setSystemTime(NOW);
   posted = [];
   status = 200;
   FakeEventSource.instances = [];
@@ -90,37 +86,34 @@ beforeEach(() => {
 });
 afterEach(() => {
   cleanup();
-  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 
 async function renderList() {
   const { TodoList } = await import("../src/TodoList");
-  render(<TodoList now={NOW} />);
+  render(<TodoList />);
 }
 
-const names = () => [...document.querySelectorAll(".todo-list > .todo .todo-title")].map((e) => e.textContent);
+const names = (list = "Open to-dos") => [...screen.getByRole("list", { name: list }).querySelectorAll(".todo-title")].map((e) => e.textContent);
 const row = (name: string) => [...document.querySelectorAll<HTMLElement>(".todo")].find((r) => r.querySelector(".todo-title")?.textContent === name)!;
-const view = (name: string) => screen.getByRole("button", { name: new RegExp(`^${name} \\d+$`) });
-const counts = () => ["Today", "Upcoming", "Done"].map((v) => view(v).textContent);
+const doneToggle = () => screen.getByRole("button", { name: /^Done \(\d+\)$/ });
 const flush = () => act(async () => {});
 
 describe("Board to-do list", () => {
-  it("opens on Today: due today and overdue, sorted by priority, urgent marked, overdue red with how late", async () => {
+  it("shows one open list sorted by priority, then creation time, with Done collapsed", async () => {
     await renderList();
-    expect(counts()).toEqual(["Today 3", "Upcoming 3", "Done 3"]);
-    expect(view("Today").getAttribute("aria-pressed")).toBe("true");
-    expect(names()).toEqual(["Call the vendor", "Send invoice", "Pay rent"]);
-
-    expect(row("Call the vendor").dataset.priority).toBe("urgent");
+    expect(names()).toEqual(["Call the vendor", "Book flights", "Send invoice", "Pay rent", "Read book", "Prep notes", "Plan offsite"]);
+    expect(screen.getAllByRole("list")).toHaveLength(1);
+    expect(doneToggle().textContent).toBe("Done (3)");
+    expect(doneToggle().getAttribute("aria-expanded")).toBe("false");
     expect(row("Call the vendor").querySelector(".todo-urgent")).not.toBeNull();
     expect(row("Send invoice").querySelector(".todo-urgent")).toBeNull();
 
-    expect(row("Call the vendor").dataset.overdue).toBeUndefined();
-    expect(row("Call the vendor").querySelector(".todo-due")!.textContent).toBe("Today 3:00 PM");
-    expect(row("Send invoice").dataset.overdue).toBe("true");
-    expect(row("Send invoice").querySelector(".todo-due.overdue")!.textContent).toBe("Today 9:00 AM · 3 h late");
-    expect(row("Pay rent").querySelector(".todo-due.overdue")!.textContent).toBe("Yesterday · 1 day late");
+    fireEvent.click(doneToggle());
+    expect(doneToggle().getAttribute("aria-expanded")).toBe("true");
+    expect(names("Done to-dos")).toEqual(["Find number", "Old thing", "Older thing"]);
+    fireEvent.click(doneToggle());
+    expect(screen.queryByRole("list", { name: "Done to-dos" })).toBeNull();
   });
 
   it("shows priority, subtask progress and comment count chips on each row", async () => {
@@ -132,63 +125,56 @@ describe("Board to-do list", () => {
     expect(row("Pay rent").querySelector(".todo-subs, .todo-comments")).toBeNull();
   });
 
-  it("switches views: Upcoming groups by day with No date last; Done is newest completion first with the time in Eastern", async () => {
+  it("renders no date controls or labels in open or completed to-dos, including expanded details", async () => {
     await renderList();
-    fireEvent.click(view("Upcoming"));
-    expect(view("Upcoming").getAttribute("aria-pressed")).toBe("true");
-    expect(view("Today").getAttribute("aria-pressed")).toBe("false");
-    const groups = [...document.querySelectorAll<HTMLElement>(".todo-day")];
-    expect(groups.map((g) => g.querySelector("h3")!.textContent)).toEqual(["Tomorrow", "Sat, Nov 28", "No date"]);
-    expect(groups.map((g) => [...g.querySelectorAll(".todo-title")].map((e) => e.textContent))).toEqual([["Book flights"], ["Plan offsite"], ["Read book"]]);
-
-    fireEvent.click(view("Done"));
-    expect(names()).toEqual(["Find number", "Old thing", "Older thing"]);
-    expect(row("Old thing").querySelector(".todo-done-at")!.textContent).toBe("Done Nov 26, 2026, 10:00 AM ET");
-    expect((within(row("Old thing")).getByRole("checkbox") as HTMLInputElement).checked).toBe(true);
-    // An overdue due date is not red outside Today.
-    expect(document.querySelector(".overdue")).toBeNull();
+    fireEvent.click(within(row("Call the vendor")).getByRole("button", { name: "Call the vendor" }));
+    fireEvent.click(doneToggle());
+    fireEvent.click(within(row("Old thing")).getByRole("button", { name: "Old thing" }));
+    const panel = screen.getByRole("region", { name: /^To-do/ });
+    expect(panel.querySelector('time, input[type="date"], input[type="time"], [data-overdue]')).toBeNull();
+    expect(within(panel).queryByRole("group", { name: "To-do views" })).toBeNull();
+    expect(panel.textContent).not.toMatch(/today|upcoming|yesterday|no date|due date|3:00|late/i);
+    expect(screen.getByRole("textbox", { name: "Add a to-do" }).getAttribute("placeholder")).toBe("Add a to-do: call the vendor p1");
   });
 
-  it("quick add posts the parsed to-do and clears the field; the new one shows in Upcoming", async () => {
+  it("quick add keeps date words in the name and adds the task to the open list", async () => {
     await renderList();
     const input = screen.getByRole("textbox", { name: "Add a to-do" });
     fireEvent.change(input, { target: { value: "call the vendor Friday 3pm p1" } });
     await act(async () => fireEvent.submit(input.closest("form")!));
-    expect(posted).toEqual([{ action: "add", name: "call the vendor", priority: "urgent", due: { date: "2026-11-27", time: "15:00" } }]);
+    expect(posted).toEqual([{ action: "add", name: "call the vendor Friday 3pm", priority: "urgent" }]);
     expect((input as HTMLInputElement).value).toBe("");
-    expect(document.getElementById("todo-add-note")!.textContent).toBe('Added "call the vendor", due Tomorrow 3:00 PM.');
-    expect(counts()).toEqual(["Today 3", "Upcoming 4", "Done 3"]);
-    fireEvent.click(view("Upcoming"));
-    expect(row("call the vendor").dataset.priority).toBe("urgent");
+    expect(document.getElementById("todo-add-note")!.textContent).toBe('Added "call the vendor Friday 3pm".');
+    expect(names().slice(0, 2)).toEqual(["Call the vendor", "call the vendor Friday 3pm"]);
   });
 
-  it("quick add refuses a name that is only a date and priority, and posts nothing", async () => {
+  it("quick add refuses priority alone", async () => {
     await renderList();
     const input = screen.getByRole("textbox", { name: "Add a to-do" });
-    fireEvent.change(input, { target: { value: "Friday 3pm p1" } });
+    fireEvent.change(input, { target: { value: "p1" } });
     await act(async () => fireEvent.submit(input.closest("form")!));
     expect(posted).toEqual([]);
-    expect((input as HTMLInputElement).value).toBe("Friday 3pm p1");
-    expect(document.getElementById("todo-add-note")!.textContent).toBe("Add a name besides the date and priority.");
+    expect((input as HTMLInputElement).value).toBe("p1");
+    expect(document.getElementById("todo-add-note")!.textContent).toBe("Add a name besides the priority.");
   });
 
-  it("completes a to-do with its checkbox: it leaves Today and shows in Done", async () => {
+  it("moves a completed to-do out of the open list and into Done", async () => {
     await renderList();
     await act(async () => fireEvent.click(within(row("Send invoice")).getByRole("checkbox", { name: "Complete Send invoice" })));
     expect(posted).toEqual([{ action: "done", id: "c" }]);
-    expect(names()).toEqual(["Call the vendor", "Pay rent"]);
-    expect(counts()).toEqual(["Today 2", "Upcoming 3", "Done 4"]);
-    fireEvent.click(view("Done"));
-    expect(names()[0]).toBe("Send invoice");
+    expect(names()).not.toContain("Send invoice");
+    expect(doneToggle().textContent).toBe("Done (4)");
+    expect(row("Send invoice")).toBeUndefined();
+    fireEvent.click(doneToggle());
+    expect(names("Done to-dos")[0]).toBe("Send invoice");
   });
 
   it("reopens from Done", async () => {
     await renderList();
-    fireEvent.click(view("Done"));
+    fireEvent.click(doneToggle());
     await act(async () => fireEvent.click(within(row("Old thing")).getByRole("button", { name: "Reopen" })));
     expect(posted).toEqual([{ action: "reopen", id: "g" }]);
-    expect(names()).toEqual(["Find number", "Older thing"]);
-    fireEvent.click(view("Today"));
+    expect(names("Done to-dos")).toEqual(["Find number", "Older thing"]);
     expect(names()).toContain("Old thing");
   });
 
@@ -208,11 +194,9 @@ describe("Board to-do list", () => {
     expect((r.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value).toBe("Call the vendor");
     expect(r.getByRole("group", { name: "Priority" })).toBeTruthy();
     expect(r.getByRole("button", { name: "urgent", pressed: true })).toBeTruthy();
-    expect((r.getByLabelText("Due date (ET)") as HTMLInputElement).value).toBe("2026-11-26");
-    expect((r.getByLabelText("Time") as HTMLInputElement).value).toBe("15:00");
-    expect([...row("Call the vendor").querySelectorAll(".todo-subtask span")].map((e) => e.textContent)).toEqual(["Prep notes", "Find number"]);
+    expect([...row("Call the vendor").querySelectorAll(".todo-subtask span")].map((e) => e.textContent)).toEqual(["Prep notes"]);
     expect(row("Call the vendor").querySelector(".todo-comment")!.textContent).toContain("left a voicemail");
-    expect(row("Call the vendor").querySelector(".todo-comment-meta")!.textContent).toMatch(/^bot · Nov 26, 2026, 9:00 AM ET$/);
+    expect(row("Call the vendor").querySelector(".todo-comment-meta")!.textContent).toBe("bot");
 
     fireEvent.change(r.getByRole("textbox", { name: "Add a comment" }), { target: { value: "  call back at 4  " } });
     await act(async () => fireEvent.click(r.getByRole("button", { name: "Comment" })));
@@ -246,7 +230,7 @@ describe("Board to-do list", () => {
     await renderList();
     await act(async () => fireEvent.click(within(row("Pay rent")).getByRole("checkbox")));
     expect(screen.getByRole("alert").textContent).toBe("Could not save. Try again.");
-    expect(names()).toEqual(["Call the vendor", "Send invoice", "Pay rent"]);
+    expect(names()).toContain("Pay rent");
   });
 
   it("follows live todos events on the shared stream", async () => {
@@ -255,7 +239,7 @@ describe("Board to-do list", () => {
     const next: Todos = { updated_at: LATER, items: [t("z", "Brand new", { due: { date: "2026-11-26" } })] };
     act(() => void es.dispatchEvent(new MessageEvent("todos", { data: JSON.stringify(next) })));
     expect(names()).toEqual(["Brand new"]);
-    expect(counts()).toEqual(["Today 1", "Upcoming 0", "Done 0"]);
+    expect(doneToggle().textContent).toBe("Done (0)");
     act(() => void es.dispatchEvent(new MessageEvent("todos", { data: '{"items":"nope"}' })));
     expect(names()).toEqual(["Brand new"]);
     await flush();

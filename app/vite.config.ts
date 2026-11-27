@@ -469,7 +469,7 @@ export function liveBoard(): Plugin {
   let file = "";
   let todosFile = "";
   let feedFile = "";
-  let feedOff = false;
+  let fetchFeed = false;
   let sample = false;
   let repos: string[] = [];
   let watcher: BoardWatcher | undefined;
@@ -493,7 +493,7 @@ export function liveBoard(): Plugin {
       const env = loadEnv(config.mode, config.envDir, "ACTION_BOARD_");
       sample = config.mode === "sample";
       repos = parsePrRepos(env.ACTION_BOARD_PR_REPOS);
-      feedOff = !!process.env.VITEST || sample || env.ACTION_BOARD_FEED === "off" || !repos.length;
+      fetchFeed = !process.env.VITEST && !sample && env.ACTION_BOARD_FEED !== "off" && repos.length > 0;
     },
     configureServer(server) {
       const logger = server.config.logger;
@@ -506,10 +506,10 @@ export function liveBoard(): Plugin {
         watcher = watchBoard(file, { onError: warn("board.ts") });
         todos = watchTodos(todosFile, { onError: warn("todos.ts") });
       }
-      feed = createPrFeed(sample ? { initial: samplePrFeed } : { repos, cacheFile: feedOff ? null : feedFile });
+      feed = createPrFeed(sample ? { initial: samplePrFeed } : { repos, cacheFile: feedFile });
       // Only a dev server that listens fetches: not middleware mode (vite-node, the tests).
       const pr = feed;
-      if (!feedOff) server.httpServer?.once("listening", () => pr.start());
+      if (fetchFeed) server.httpServer?.once("listening", () => pr.start());
       routes = liveRoutes(watcher, { allowHost: isLocalHost, allowOrigin: isLocalOrigin, todos, feed });
       server.middlewares.use(BOARD_ROUTE, routes.board);
       server.middlewares.use(TODOS_ROUTE, routes.todos);

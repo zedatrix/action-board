@@ -101,17 +101,16 @@
 //                                                      done + left == total. -> {"ok","milestones","totals":{done,in_progress,left,total},"updated_at"}
 //   To-do list (todos.ts, the Board's "To-do" panel). JSON from the first argument when it starts with {, else stdin.
 //   Strict: unknown keys, a blank or multi-line name over 200 chars, a priority other than urgent|high|medium|low,
-//   a due other than {"date":"YYYY-MM-DD" (a real date),"time"?:"HH:MM"} (Eastern wall clock), or a parent_id that is
-//   not a top-level to-do: exit 2, todos.ts unchanged. Unknown id: exit 5. Each prints {"ok":true,...,"todo":{...}}.
-//   ab todo-add '{"name","description"?,"priority"?,"due"?,"parent_id"?,"id"?,"quick"?}'
-//                                                      quick ("call the vendor Friday 3pm p1") is parsed by app/src/quickadd.ts, the
+//   or a parent_id that is not a top-level to-do: exit 2, todos.ts unchanged. Unknown id: exit 5. Each prints {"ok":true,...,"todo":{...}}.
+//   ab todo-add '{"name","description"?,"priority"?,"parent_id"?,"id"?,"quick"?}'
+//                                                      quick ("call the vendor p1") is parsed by app/src/quickadd.ts, the
 //                                                      Board's parser; explicit fields win. name or quick required. priority
 //                                                      defaults to medium; id (lowercase kebab) defaults to slug(name)-<6 hex>
-//   ab todo-update '{"id",<any of name, description, priority, due, parent_id>}'   null clears description, due, parent_id
+//   ab todo-update '{"id",<any of name, description, priority, parent_id>}'   null clears description or parent_id
 //   ab todo-comment '{"id","text","author"?}' [--author name]   text non-blank, max 4000; author defaults to "bot"
 //   ab todo-done '{"id"}'                           sets done_at (subtasks stay as they are); already done -> "status":"already-done"
 //   ab todo-reopen '{"id"}'                         clears done_at; already open -> "status":"already-open"
-//   ab todo-list [--view today|upcoming|done|all]   -> JSON array (views as on the Board, from app/src/todos.ts; default all)
+//   ab todo-list [--view today|upcoming|done|all]   -> JSON array (default all)
 // Exit codes: 0 ok, 1 check/lint found problems, 2 bad input (including input that is not JSON) or a corrupt file, 3 written but the live server does not
 // serve it (raise only), 4 refused (answered, cleared, or already on the board), 5 unknown id or lock timeout.
 // Stamps: a new raise sets created_at (given or now) and updated_at = created_at ("added" on the card). A re-raise replaces
@@ -781,15 +780,15 @@ if (cmd === "raise") {
   console.log(JSON.stringify({ ok: true, milestones: r.milestones.length, totals, updated_at: updated }));
 } else if (cmd === "todo-add") {
   const { v, no } = todoInput(cmd, ["id", "name", "description", "priority", "due", "parent_id", "quick"]);
-  if (!("name" in v) && !("quick" in v)) no("give name or quick, like {\"quick\":\"call the vendor Friday 3pm\"}");
+  if (!("name" in v) && !("quick" in v)) no("give name or quick, like {\"quick\":\"call the vendor p1\"}");
   // quick goes through the Board's own parser; explicit fields win over what it finds.
   let q = {};
   if ("quick" in v) {
     if (typeof v.quick !== "string" || !v.quick.trim()) no("quick must be a non-blank string");
     q = (await appModule("quickadd.ts")).parseQuickAdd(v.quick);
-    if (!("name" in v) && !q.name) no("quick add needs a name besides the date and priority, like \"call the vendor Friday 3pm\"");
+    if (!("name" in v) && !q.name) no("quick add needs a name besides the priority, like \"call the vendor p1\"");
   }
-  const name = v.name ?? q.name, priority = v.priority ?? q.priority ?? "medium", due = "due" in v ? v.due : q.due;
+  const name = v.name ?? q.name, priority = v.priority ?? q.priority ?? "medium", due = v.due;
   const e = todoNameError(name) || ("description" in v ? textError("description", v.description) : null) || priorityError(priority) || (due === undefined ? null : dueError(due));
   if (e) no(e);
   if ("id" in v && (typeof v.id !== "string" || !TODO_ID.test(v.id))) no("id must be lowercase kebab, 3-81 chars");
@@ -855,11 +854,7 @@ if (cmd === "raise") {
   const view = flag(args, "--view") ?? "all";
   if (args.length || !["today", "upcoming", "done", "all"].includes(view)) die(2, "todo-list: usage: ab todo-list [--view today|upcoming|done|all]");
   const items = loadTodos().t.items;
-  let out = items;
-  if (view !== "all") {
-    const v = await appModule("todos.ts"), now = new Date();
-    out = view === "today" ? v.todayView(items, now) : view === "done" ? v.doneView(items) : v.upcomingView(items, now).flatMap((g) => g.items);
-  }
+  const out = view === "all" ? items : (await appModule("todos.ts")).cliTodoList(items, view, new Date());
   console.log(JSON.stringify(out));
 } else {
   die(2, "usage: ab raise|answer|clear|restore|priority|glance|hot|unhot|open|check|lint|backfill-stamps|backfill-titles|project-refresh|todo-add|todo-update|todo-comment|todo-done|todo-reopen|todo-list (see header of " + process.argv[1] + ")");

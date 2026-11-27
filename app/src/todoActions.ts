@@ -1,11 +1,11 @@
-import type { Todo, TodoDue, TodoPriority } from "./data/types";
+import type { Todo, TodoPriority } from "./data/types";
 import { TODO_PATH } from "./useLiveTodos";
 
 // A body for POST /__ab/todo: the action, then that `ab todo-<action>` command's keys. The server sets a
 // comment's author ("User").
 export type TodoAction =
-  | { action: "add"; name: string; priority?: TodoPriority; due?: TodoDue; parent_id?: string }
-  | { action: "update"; id: string; name?: string; description?: string | null; priority?: TodoPriority; due?: TodoDue | null }
+  | { action: "add"; name: string; priority?: TodoPriority; parent_id?: string }
+  | { action: "update"; id: string; name?: string; description?: string | null; priority?: TodoPriority }
   | { action: "comment"; id: string; text: string }
   | { action: "done" | "reopen"; id: string };
 
