@@ -756,7 +756,7 @@ lgok "good Linear URL (alternate workspace)"      t-lg-lin2 '"PROJ-15054"' '"htt
 lgok "bare PR ref, no link"        t-lg-bare '"example-web#11550"' ''
 lgok "ticket key, no link"         t-lg-key '"PROJ-14382"' ''
 lgok "null card_ref, no link"      t-lg-null null ''
-lgok "plain-words card_ref"        t-lg-words '"Coolify preview"' ''
+lgok "plain-words card_ref"        t-lg-words '"Staging preview"' ''
 lgok "URL on another host"         t-lg-other '"https://example.com/messages/1"' ''
 lgok "link only (fills card_ref)"  t-lg-only null '"https://github.com/acme/example-api/pull/11764"'
 t 0 "  ...link stored, card_ref filled, printed card links it"  bash -c "node -e 'const d=JSON.parse(process.argv[1]).d;if(d.link!==\"https://github.com/acme/example-api/pull/11764\"||d.card_ref!==d.link)process.exit(1)' '$(dx t-lg-only)' && node '$AB' raise '$(lg t-lg-only null '"https://github.com/acme/example-api/pull/11764"')' | grep -qF '\"link\": \"https://github.com/acme/example-api/pull/11764\"'"

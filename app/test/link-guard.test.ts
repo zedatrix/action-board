@@ -58,7 +58,7 @@ const allowed: [string, string | null, string | undefined][] = [
   ["bare PR ref, no link", "example-web#11550", undefined],
   ["ticket key, no link", "PROJ-14382", undefined],
   ["null card_ref, no link", null, undefined],
-  ["plain-words card_ref", "Coolify preview", undefined],
+  ["plain-words card_ref", "Staging preview", undefined],
   ["URL on another host", "https://example.com/messages/1", undefined],
   ["link only (fills card_ref)", null, "https://github.com/acme/example-api/pull/11764"],
 ];
