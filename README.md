@@ -84,7 +84,9 @@ project tab, no hash means the Board. Arrow keys, Home and End move between tabs
 - **To-do** (beside the queue on wide screens, under it on narrow ones). One running list shows open tasks
   from urgent to low, with oldest first within each priority. Open **Done (N)** below the list to reopen completed tasks.
   Change priority, add comments or subtasks, and complete items in place. Quick add recognizes priority tokens,
-  for example `call the vendor p1`.
+  for example `call the vendor p1`. Select **Message** on any open or completed to-do to send your assistant a note
+  as `todo.message`. Enter sends, and Shift+Enter or Cmd/Ctrl+Enter adds a line. The row shows delivery and retry
+  status, and the composer closes after delivery.
 - **Footer**: "Board updated" and the board file's `updated_at`.
 - **Live updates.** The page follows the board file. Any change made with `bin/ab.mjs` (or by hand) shows on every
   open tab within about a second, with no reload, and typed text is kept.
@@ -322,7 +324,7 @@ methods.
 | `POST /__ab/todo` | Runs a to-do mutation through `ab`. | 200; 400 invalid input; 404 unknown id. |
 | `POST /__ab/hot` | Body `{"url":"<PR URL>","hot":true}`. Saves a HOT mark through `ab`. | 200; 400 invalid input. |
 | `GET /__ab/hot-log` | HOT changes, optionally filtered by an ISO `since` timestamp. | 200; 400 invalid input. |
-| `POST /__ab/webhook` | Fallback forwarder. Forwards the body unchanged to `ACTION_BOARD_WEBHOOK_URL` with `ACTION_BOARD_WEBHOOK_AUTH` as `Authorization` (both read from `.env.local` on each request). Accepts only the events `decision.answered`, `item.message`, `decision.clarify`, `decision.not_relevant`. Body up to 64 KB. 15 s timeout. | 200 `{"status":<receiver HTTP status>}`; 400 `{"status":null}` bad JSON or event; 503 no webhook URL; 502 receiver unreachable. Never echoes the URL or auth. |
+| `POST /__ab/webhook` | Fallback forwarder. Forwards the body unchanged to `ACTION_BOARD_WEBHOOK_URL` with `ACTION_BOARD_WEBHOOK_AUTH` as `Authorization` (both read from `.env.local` on each request). Accepts only the events `decision.answered`, `item.message`, `todo.message`, `decision.clarify`, `decision.not_relevant`. Body up to 64 KB. 15 s timeout. | 200 `{"status":<receiver HTTP status>}`; 400 `{"status":null}` bad JSON or event; 503 no webhook URL; 502 receiver unreachable. Never echoes the URL or auth. |
 | `POST /__ab/delivery-log` | The page reports each webhook attempt; one sanitized JSON line is appended to `app/.delivery-log.jsonl`. Body up to 8 KB. | 204; 400 bad report; 500 write failed. |
 | `POST /__ab/priority` | Body `{"id":"<decision id>","priority":"high"}`. Runs `ab priority <id> <level>`. Body up to 1 KB. | 200 `{"ok":true,"priority":"high"}`; 400 bad input; 404 unknown id; 409 already answered; 502 anything else. |
 | `POST /__ab/clear` | Body `{"id":"<decision id>"}`. Runs `ab clear <id> --reason "not relevant"`. The page calls it only after the `decision.not_relevant` webhook got a 2xx. Body up to 1 KB. | 200 `{"ok":true}`; 400 bad input; 404 unknown id; 502 anything else. |
@@ -819,6 +821,31 @@ there is one more field, `"custom_text"`, with the same text. `card_ref` is a st
 - `item_who` (waiting and others items), `item_status` (tickets) and `item_link` are left out when the item has none.
 - `message_id` is unique per note; use it to drop duplicates.
 
+`todo.message` is sent when the user writes a note from a to-do row on the Board tab.
+
+```json
+{
+  "event": "todo.message",
+  "message_id": "00000000-0000-4000-8000-000000000002",
+  "todo_id": "review-banner",
+  "name": "Review the banner",
+  "description": "Check the preview at https://example.com/tickets/DEMO-1",
+  "priority": "high",
+  "due": null,
+  "comments": [
+    { "id": "c1", "text": "The preview is ready.", "author": "alice", "at": "2026-11-23T15:00:00.000Z" }
+  ],
+  "links": ["https://example.com/tickets/DEMO-1"],
+  "text": "Can you review this?",
+  "sent_at": "2026-11-23T15:04:05.000Z"
+}
+```
+
+- `todo_id` is the record's id. The payload includes its name, priority, and existing comments.
+- `description` is included when present. `due` is the stored Eastern date and optional time, or `null`.
+- `links` lists unique HTTP(S) URLs from the to-do's name, description, and comments, or `[]`.
+- `message_id` is unique per note. Use it to drop duplicates.
+
 ### How it is delivered
 
 - **Direct first.** The page POSTs straight to `ACTION_BOARD_WEBHOOK_URL`. Because of the JSON body and the
@@ -839,7 +866,8 @@ there is one more field, `"custom_text"`, with the same text. `card_ref` is a st
   receiver handles `decision.not_relevant`, the board has removed (or is removing) the card itself.
 - **Delivery log.** Each try appends one line to `app/.delivery-log.jsonl`:
   `{"event","decision_id","answer","answer_label","http","via","attempt","status","at"}` for answers,
-  `{"event","message_id","item_id","item_section",...}` for notes, and `{"event","decision_id",...}` for clarify and
+  `{"event","message_id","item_id","item_section",...}` for glance notes, `{"event","message_id","todo_id",...}`
+  for to-do notes, and `{"event","decision_id",...}` for clarify and
   not relevant. `via` is `direct` or `fallback`, `status` is `delivered`, `retrying` or `failed`, `http` is the
   receiver's status or `null`. The URL, auth, question, context and note text are never logged.
 
@@ -892,6 +920,8 @@ node /ABSOLUTE/PATH/TO/action-board/bin/ab.mjs. The request body is JSON with an
 4. "item.message": a note from the user about a glance item (item_section waiting, others or tickets; item_title,
    item_link). Treat text as an instruction from the user about that item: do it, or reply in chat with what you
    will do. Use message_id to ignore duplicates.
+5. "todo.message" carries a note from the user about todo_id. Use the included to-do context to act on text or
+   reply in chat. Use message_id to ignore duplicates.
 Never edit the board files by hand. Never print or store the webhook URL or auth value. Reply with a short summary of
 what you did.
 ```

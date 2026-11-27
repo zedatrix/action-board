@@ -1,4 +1,5 @@
-import type { Board, Decision, OtherPR, Ticket, WaitingItem } from "./data/types";
+import type { Board, Decision, OtherPR, Ticket, Todo, WaitingItem } from "./data/types";
+import { findUrls } from "./linkify";
 
 export type GlanceSection = Exclude<keyof Board["glance"], "parked">;
 export type ItemSection = "decision" | GlanceSection;
@@ -14,6 +15,19 @@ export type BoardItem = {
 };
 
 export type MessagePayload = { event: "item.message"; message_id: string } & BoardItem & { text: string; sent_at: string };
+export type TodoMessagePayload = {
+  event: "todo.message";
+  message_id: string;
+  todo_id: string;
+  name: string;
+  description?: string;
+  priority: Todo["priority"];
+  due: NonNullable<Todo["due"]> | null;
+  comments: Todo["comments"];
+  links: string[];
+  text: string;
+  sent_at: string;
+};
 
 const present = (v: unknown): v is string => typeof v === "string" && v.trim() !== "";
 
@@ -59,6 +73,7 @@ export function glanceItem(section: GlanceSection, item: WaitingItem | Ticket | 
 
 // Key for per-item UI state. item_id alone can repeat across sections (a PR both waiting and a ticket).
 export const itemKey = (item: Pick<BoardItem, "item_id" | "item_section">) => `${item.item_section}|${item.item_id}`;
+export const todoMessageKey = (id: string) => `todo|${id}`;
 
 // crypto.randomUUID only exists in secure contexts, and a plain http:// host name may not be one.
 export function newMessageId(c: Pick<Crypto, "getRandomValues"> & { randomUUID?: () => string } = globalThis.crypto): string {
@@ -84,6 +99,29 @@ export function buildMessagePayload(item: BoardItem, text: string, now: Date, me
     ...opt("item_who"),
     ...opt("item_status"),
     ...opt("item_link"),
+    text: t,
+    sent_at: now.toISOString(),
+  };
+}
+
+export function buildTodoMessagePayload(todo: Todo, text: string, now: Date, messageId: string): TodoMessagePayload {
+  const t = text.trim();
+  if (!t) throw new Error("Message is blank");
+  // To-dos hold links in their text fields. Keep each URL once, in order of appearance.
+  const links = new Set<string>();
+  for (const field of [todo.name, todo.description ?? "", ...todo.comments.map((comment) => comment.text)]) {
+    for (const { url } of findUrls(field)) links.add(url);
+  }
+  return {
+    event: "todo.message",
+    message_id: messageId,
+    todo_id: todo.id,
+    name: todo.name,
+    ...(present(todo.description) ? { description: todo.description } : {}),
+    priority: todo.priority,
+    due: todo.due ?? null,
+    comments: todo.comments,
+    links: [...links],
     text: t,
     sent_at: now.toISOString(),
   };

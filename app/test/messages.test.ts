@@ -1,9 +1,53 @@
 import { describe, expect, it } from "vitest";
-import type { Decision } from "../src/data/types";
-import { buildMessagePayload, decisionItem, glanceItem, glanceItemId, itemKey, newMessageId, slug } from "../src/messages";
+import type { Decision, Todo } from "../src/data/types";
+import { buildMessagePayload, buildTodoMessagePayload, decisionItem, glanceItem, glanceItemId, itemKey, newMessageId, slug } from "../src/messages";
 
 const NOW = new Date("2026-11-10T12:34:56.789Z");
 const MID = "00000000-0000-4000-8000-000000000001";
+
+describe("buildTodoMessagePayload", () => {
+  const todo: Todo = {
+    id: "review-banner",
+    name: "Review the banner",
+    priority: "high",
+    comments: [],
+    created_at: NOW.toISOString(),
+    updated_at: NOW.toISOString(),
+  };
+
+  it("keeps the context in payload order and lists unique links from the to-do", () => {
+    const pr = "https://example.com/acme/example-api/pull/1";
+    const ticket = "https://example.com/tickets/DEMO-1";
+    const description = `Review ${pr}.`;
+    const due = { date: "2026-11-30", time: "15:00" };
+    const comments = [{ id: "c1", text: `See ${ticket} and ${pr}.`, author: "alice", at: NOW.toISOString() }];
+    const payload = buildTodoMessagePayload({ ...todo, description, due, comments }, "  Can you review this?\n", NOW, MID);
+    const expected = {
+      event: "todo.message",
+      message_id: MID,
+      todo_id: todo.id,
+      name: todo.name,
+      description,
+      priority: "high",
+      due,
+      comments,
+      links: [pr, ticket],
+      text: "Can you review this?",
+      sent_at: NOW.toISOString(),
+    };
+    expect(JSON.stringify(payload)).toBe(JSON.stringify(expected));
+  });
+
+  it("omits a missing description and uses null for a missing due date", () => {
+    const payload = buildTodoMessagePayload(todo, "Any updates?", NOW, MID);
+    expect(Object.keys(payload)).toEqual(["event", "message_id", "todo_id", "name", "priority", "due", "comments", "links", "text", "sent_at"]);
+    expect(payload).toMatchObject({ due: null, comments: [], links: [] });
+  });
+
+  it("rejects a blank note", () => {
+    expect(() => buildTodoMessagePayload(todo, " \n\t ", NOW, MID)).toThrow("Message is blank");
+  });
+});
 
 const decision: Decision = {
   id: "merge-42",

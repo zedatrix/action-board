@@ -2,6 +2,7 @@
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Todo, Todos } from "../src/data/types";
+import { DELIVERY_LOG_PATH, loadMessages } from "../src/delivery";
 import { TODO_PATH, TODOS_PATH } from "../src/useLiveTodos";
 
 const LATER = "2026-11-26T17:00:05.000Z";
@@ -86,6 +87,9 @@ beforeEach(() => {
 });
 afterEach(() => {
   cleanup();
+  window.localStorage.clear();
+  vi.useRealTimers();
+  vi.unstubAllEnvs();
   vi.unstubAllGlobals();
 });
 
@@ -123,6 +127,63 @@ describe("Board to-do list", () => {
     expect(r.getByLabelText("1 of 2 subtasks done").textContent).toBe("1/2");
     expect(r.getByLabelText("1 comment").textContent).toBe("1");
     expect(row("Pay rent").querySelector(".todo-subs, .todo-comments")).toBeNull();
+  });
+
+  it("opens the shared composer on a to-do row, enqueues its message, and retries delivery", async () => {
+    const hook = "https://example.com/assistant";
+    vi.stubEnv("ACTION_BOARD_WEBHOOK_URL", hook);
+    vi.stubEnv("ACTION_BOARD_ASSISTANT_NAME", "");
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const bodies: string[] = [];
+    const reports: unknown[] = [];
+    let webhookStatus = 500;
+    vi.mocked(fetch).mockImplementation(async (url, init) => {
+      if (url === hook) {
+        bodies.push(String(init?.body));
+        return new Response(null, { status: webhookStatus });
+      }
+      if (url === DELIVERY_LOG_PATH) {
+        reports.push(JSON.parse(String(init?.body)));
+        return new Response(null, { status: 204 });
+      }
+      throw new Error("Unexpected request");
+    });
+
+    const { default: App } = await import("../src/App");
+    render(<App />);
+    const task = within(row("Call the vendor"));
+    fireEvent.click(task.getByRole("button", { name: "Message your assistant about Call the vendor" }));
+    const field = task.getByRole("textbox", { name: "Message to your assistant about Call the vendor" });
+    expect(within(row("Pay rent")).queryByRole("textbox")).toBeNull();
+    fireEvent.change(field, { target: { value: "  Please follow up.  " } });
+    fireEvent.click(task.getByRole("button", { name: "Send" }));
+    expect(task.getByText("Sending...")).toBeTruthy();
+    await flush();
+
+    const [queued] = Object.values(loadMessages(window.localStorage));
+    expect(queued.payload).toEqual({
+      event: "todo.message",
+      message_id: expect.any(String),
+      todo_id: "b",
+      name: "Call the vendor",
+      priority: "urgent",
+      due: fixture.items[1].due,
+      comments: fixture.items[1].comments,
+      links: [],
+      text: "Please follow up.",
+      sent_at: expect.any(String),
+    });
+    expect(queued.status).toBe("pending");
+    expect(bodies).toEqual([JSON.stringify(queued.payload)]);
+
+    await act(async () => void (await vi.advanceTimersByTimeAsync(2500)));
+    expect(task.getByText("Not delivered, will retry")).toBeTruthy();
+    webhookStatus = 200;
+    await act(async () => void window.dispatchEvent(new Event("focus")));
+    expect(task.getByText(/^Sent to your assistant/)).toBeTruthy();
+    expect(task.queryByRole("textbox")).toBeNull();
+    expect(bodies).toEqual(Array(4).fill(bodies[0]));
+    expect(reports.at(-1)).toMatchObject({ event: "todo.message", message_id: queued.payload.message_id, todo_id: "b", status: "delivered" });
   });
 
   it("renders no date controls or labels in open or completed to-dos, including expanded details", async () => {

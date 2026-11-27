@@ -69,6 +69,19 @@ const message = {
   sent_at: "2026-11-10T12:00:00.000Z",
 };
 
+const todoMessage = {
+  event: "todo.message",
+  message_id: "00000000-0000-4000-8000-000000000002",
+  todo_id: "review-banner",
+  name: "Review the banner",
+  priority: "high",
+  due: null,
+  comments: [],
+  links: [],
+  text: "Can you review this?",
+  sent_at: "2026-11-10T12:00:00.000Z",
+};
+
 const rawPost = (host: string, body: string, headers: Record<string, string> = {}) =>
   new Promise<number>((resolve, reject) => {
     const req = request(`${base}/__ab/webhook`, { method: "POST", agent: false, headers: { Host: host, "Content-Type": "application/json", ...headers } }, (res) => {
@@ -153,9 +166,9 @@ describe("POST /__ab/webhook", () => {
     expect(receiver.received.length).toBe(before);
   });
 
-  it("forwards an item.message body verbatim with the Authorization header", async () => {
+  it.each([message, todoMessage])("forwards a $event body verbatim with the Authorization header", async (payload) => {
     const before = receiver.received.length;
-    const body = JSON.stringify(message);
+    const body = JSON.stringify(payload);
     const res = await fetch(`${base}/__ab/webhook`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Origin: "http://board.localhost:8085" },

@@ -1,4 +1,4 @@
-import { useState, type FormEvent, type KeyboardEvent } from "react";
+import { useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
 import type { Todo } from "./data/types";
 import { linkify } from "./linkify";
 import type { Send, TodoAction } from "./todoActions";
@@ -11,9 +11,10 @@ type Props = {
   expanded: boolean;
   onToggle: (id: string) => void;
   send: Send;
+  message: ReactNode;
 };
 
-export function TodoItem({ todo, items, expanded, onToggle, send }: Props) {
+export function TodoItem({ todo, items, expanded, onToggle, send, message }: Props) {
   const [busy, setBusy] = useState(false);
   const run = async (body: TodoAction) => {
     if (busy) return;
@@ -66,6 +67,7 @@ export function TodoItem({ todo, items, expanded, onToggle, send }: Props) {
             </span>
           )}
         </div>
+        {message}
         {done && (
           <button type="button" className="not-relevant-btn todo-reopen" disabled={busy} onClick={() => void run({ action: "reopen", id: todo.id })}>
             Reopen

@@ -1,5 +1,5 @@
 import type { Board, Choice, Decision } from "./data/types";
-import type { MessagePayload } from "./messages";
+import type { MessagePayload, TodoMessagePayload } from "./messages";
 
 // App answers live in localStorage under this key until the board file records an answer for the decision.
 export const STORAGE_KEY = "action-board:app-answers";
@@ -94,7 +94,8 @@ export type AppAnswerRecord = DeliveryRecord<WebhookPayload>;
 export type AppAnswers = Record<string, AppAnswerRecord>;
 
 // Keyed by message_id.
-export type MessageRecord = DeliveryRecord<MessagePayload>;
+type OutboxMessage = MessagePayload | TodoMessagePayload;
+export type MessageRecord = DeliveryRecord<OutboxMessage>;
 export type AppMessages = Record<string, MessageRecord>;
 
 export type KeyValueStorage = Pick<Storage, "getItem" | "setItem">;
@@ -122,6 +123,11 @@ export type MessageReport = {
   item_id: string;
   item_section: string;
 } & Outcome;
+export type TodoMessageReport = {
+  event: "todo.message";
+  message_id: string;
+  todo_id: string;
+} & Outcome;
 export type ClarifyReport = {
   event: "decision.clarify";
   decision_id: string;
@@ -130,7 +136,7 @@ export type NotRelevantReport = {
   event: "decision.not_relevant";
   decision_id: string;
 } & Outcome;
-export type DeliveryReport = AnswerReport | MessageReport | ClarifyReport | NotRelevantReport;
+export type DeliveryReport = AnswerReport | MessageReport | TodoMessageReport | ClarifyReport | NotRelevantReport;
 
 // How a clarify (or not relevant) request ended: ok means a 2xx from the receiver within one retry cycle.
 export type ClarifyResult = { ok: boolean; http: number | null; via: DeliveryVia };
@@ -312,7 +318,7 @@ export function createDelivery(deps: DeliveryDeps) {
     load: () => Record<string, DeliveryRecord<P>>,
     save: (recs: Record<string, DeliveryRecord<P>>) => void,
     onChange: ((recs: Record<string, DeliveryRecord<P>>) => void) | undefined,
-    describe: (id: string, payload: P) => Omit<AnswerReport, keyof Outcome> | Omit<MessageReport, keyof Outcome>,
+    describe: (id: string, payload: P) => Omit<AnswerReport, keyof Outcome> | Omit<MessageReport, keyof Outcome> | Omit<TodoMessageReport, keyof Outcome>,
   ) {
     const inFlight = new Set<string>();
 
@@ -369,11 +375,14 @@ export function createDelivery(deps: DeliveryDeps) {
     (id, p) => ({ event: "decision.answered", decision_id: id, answer: p.answer, answer_label: p.answer_label }),
   );
 
-  const messages = queue<MessagePayload>(
+  const messages = queue<OutboxMessage>(
     () => loadMessages(deps.storage),
     (recs) => saveMessages(deps.storage, recs),
     deps.onMessagesChange,
-    (id, p) => ({ event: "item.message", message_id: id, item_id: p.item_id, item_section: p.item_section }),
+    (id, p) =>
+      p.event === "todo.message"
+        ? { event: p.event, message_id: id, todo_id: p.todo_id }
+        : { event: "item.message", message_id: id, item_id: p.item_id, item_section: p.item_section },
   );
 
   // Stores a new app answer as pending, then delivers it.
@@ -396,7 +405,7 @@ export function createDelivery(deps: DeliveryDeps) {
   }
 
   // Stores a new message as pending (once per message_id), then delivers it.
-  function message(payload: MessagePayload): Promise<void> {
+  function message(payload: OutboxMessage): Promise<void> {
     const recs = loadMessages(deps.storage);
     if (!recs[payload.message_id]) {
       messages.write(

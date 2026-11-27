@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { todos as bundledTodos } from "./data/todos";
 import type { Todo } from "./data/types";
 import { parseQuickAdd } from "./quickadd";
@@ -10,7 +10,7 @@ import { useLiveTodos } from "./useLiveTodos";
 const SAVE_ERROR = "Could not save. Try again.";
 
 // Every change goes through POST /__ab/todo and reaches other tabs through the live feed.
-export function TodoList() {
+export function TodoList({ renderMessage }: { renderMessage?: (todo: Todo) => ReactNode }) {
   const feed = useLiveTodos(bundledTodos);
   // To-dos as the POST route returned them, shown until the feed has them too.
   const [saved, setSaved] = useState<Record<string, Todo>>({});
@@ -48,7 +48,9 @@ export function TodoList() {
 
   const active = sortTodos(items.filter((t) => !isDone(t)));
   const done = completedTodos(items);
-  const row = (t: Todo) => <TodoItem key={t.id} todo={t} items={items} expanded={!!open[t.id]} onToggle={toggle} send={send} />;
+  const row = (t: Todo) => (
+    <TodoItem key={t.id} todo={t} items={items} expanded={!!open[t.id]} onToggle={toggle} send={send} message={renderMessage?.(t)} />
+  );
 
   return (
     <section className="todos" aria-labelledby="todos-heading">

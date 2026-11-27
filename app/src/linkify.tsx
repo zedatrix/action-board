@@ -9,6 +9,13 @@ function clean(match: string): string | null {
   return /^https?:\/\/./.test(url) ? url : null;
 }
 
+export function* findUrls(text: string) {
+  for (const match of text.matchAll(URL_RE)) {
+    const url = clean(match[0]);
+    if (url) yield { url, start: match.index! };
+  }
+}
+
 // Card text links open in a new tab and never get the opener.
 export function Link({ href, className, children }: { href: string; className?: string; children?: ReactNode }) {
   return (
@@ -23,10 +30,7 @@ export function Link({ href, className, children }: { href: string; className?: 
 export function linkify(text: string): ReactNode[] {
   const out: ReactNode[] = [];
   let last = 0;
-  for (const m of text.matchAll(URL_RE)) {
-    const url = clean(m[0]);
-    if (!url) continue;
-    const start = m.index!;
+  for (const { url, start } of findUrls(text)) {
     if (start > last) out.push(text.slice(last, start));
     out.push(<Link key={start} href={url} />);
     last = start + url.length;
