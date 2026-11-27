@@ -1,24 +1,19 @@
 import { useState, type FormEvent, type KeyboardEvent } from "react";
-import type { Todo, TodoDue } from "./data/types";
+import type { Todo } from "./data/types";
 import { linkify } from "./linkify";
-import { etTime } from "./eastern";
 import type { Send, TodoAction } from "./todoActions";
-import { dueLabel, isDone, isOverdue, lateBy, nextPriority, subtaskProgress, subtasksOf, TODO_PRIORITIES, type TodoView } from "./todos";
+import { isDone, nextPriority, openSubtasks, subtaskProgress, TODO_PRIORITIES } from "./todos";
 
 type Props = {
   todo: Todo;
   // The whole list, for subtasks.
   items: Todo[];
-  now: Date;
-  view: TodoView;
   expanded: boolean;
   onToggle: (id: string) => void;
   send: Send;
 };
 
-// One to-do: checkbox, name (tap to expand), priority chip (tap cycles), due chip, subtask progress, comment count.
-// In Today an overdue one is red with how late; in Done it shows when it was completed and a Reopen button.
-export function TodoItem({ todo, items, now, view, expanded, onToggle, send }: Props) {
+export function TodoItem({ todo, items, expanded, onToggle, send }: Props) {
   const [busy, setBusy] = useState(false);
   const run = async (body: TodoAction) => {
     if (busy) return;
@@ -27,13 +22,11 @@ export function TodoItem({ todo, items, now, view, expanded, onToggle, send }: P
     setBusy(false);
   };
   const done = isDone(todo);
-  const overdue = view === "today" && isOverdue(todo, now);
-  const late = overdue ? lateBy(todo, now) : null;
   const progress = subtaskProgress(items, todo.id);
   const n = todo.comments.length;
 
   return (
-    <li className="todo" data-todo-id={todo.id} data-priority={todo.priority} data-overdue={overdue || undefined} data-done={done || undefined}>
+    <li className="todo" data-todo-id={todo.id} data-priority={todo.priority} data-done={done || undefined}>
       <div className="todo-row">
         <input
           type="checkbox"
@@ -62,12 +55,6 @@ export function TodoItem({ todo, items, now, view, expanded, onToggle, send }: P
           >
             {todo.priority}
           </button>
-          {todo.due && (
-            <span className={overdue ? "todo-chip todo-due overdue" : "todo-chip todo-due"}>
-              {dueLabel(todo.due, now)}
-              {late && ` · ${late}`}
-            </span>
-          )}
           {progress && (
             <span className="todo-chip todo-subs" aria-label={`${progress.done} of ${progress.total} subtasks done`}>
               {progress.done}/{progress.total}
@@ -79,15 +66,10 @@ export function TodoItem({ todo, items, now, view, expanded, onToggle, send }: P
             </span>
           )}
         </div>
-        {view === "done" && todo.done_at && (
-          <div className="todo-done">
-            <span className="todo-done-at">
-              Done <time dateTime={todo.done_at}>{etTime(todo.done_at)}</time>
-            </span>
-            <button type="button" className="not-relevant-btn todo-reopen" disabled={busy} onClick={() => void run({ action: "reopen", id: todo.id })}>
-              Reopen
-            </button>
-          </div>
+        {done && (
+          <button type="button" className="not-relevant-btn todo-reopen" disabled={busy} onClick={() => void run({ action: "reopen", id: todo.id })}>
+            Reopen
+          </button>
         )}
       </div>
       {expanded && <TodoDetails todo={todo} items={items} send={send} />}
@@ -95,13 +77,12 @@ export function TodoItem({ todo, items, now, view, expanded, onToggle, send }: P
   );
 }
 
-// The expanded to-do: name, description, due, priority, subtasks and comments, each saved as it changes.
+// The expanded to-do: name, description, priority, subtasks and comments, each saved as it changes.
 function TodoDetails({ todo, items, send }: { todo: Todo; items: Todo[]; send: Send }) {
   const id = todo.id;
   // Typed but not yet saved; null shows the to-do's own value (so live updates show through).
   const [name, setName] = useState<string | null>(null);
   const [description, setDescription] = useState<string | null>(null);
-  const [due, setDue] = useState<{ date: string; time: string } | null>(null);
   const [subtask, setSubtask] = useState("");
   const [comment, setComment] = useState("");
   const [busy, setBusy] = useState(false);
@@ -123,12 +104,6 @@ function TodoDetails({ todo, items, send }: { todo: Todo; items: Todo[]; send: S
     if (description.trim() !== (todo.description ?? "")) await run({ action: "update", id, description: description.trim() || null });
     setDescription(null);
   };
-  const saveDue = async (next: { date: string; time: string }) => {
-    setDue(next);
-    const value: TodoDue | null = next.date ? { date: next.date, ...(next.time ? { time: next.time } : {}) } : null;
-    await run({ action: "update", id, due: value });
-    setDue(null);
-  };
   const addSubtask = async (e: FormEvent) => {
     e.preventDefault();
     if (busy || !subtask.trim()) return;
@@ -143,8 +118,7 @@ function TodoDetails({ todo, items, send }: { todo: Todo; items: Todo[]; send: S
     if (e.key === "Enter") e.currentTarget.blur();
   };
 
-  const shownDue = due ?? { date: todo.due?.date ?? "", time: todo.due?.time ?? "" };
-  const subs = todo.parent_id ? null : subtasksOf(items, id);
+  const subs = todo.parent_id ? null : openSubtasks(items, id);
 
   return (
     <div className="todo-details">
@@ -169,22 +143,6 @@ function TodoDetails({ todo, items, send }: { todo: Todo; items: Todo[]; send: S
           onBlur={() => void saveDescription()}
         />
       </label>
-      <div className="todo-field-row">
-        <label className="todo-field">
-          <span className="todo-label">Due date (ET)</span>
-          <input className="custom-input" type="date" value={shownDue.date} onChange={(e) => void saveDue({ date: e.target.value, time: e.target.value ? shownDue.time : "" })} />
-        </label>
-        <label className="todo-field">
-          <span className="todo-label">Time</span>
-          <input
-            className="custom-input"
-            type="time"
-            value={shownDue.time}
-            disabled={!shownDue.date}
-            onChange={(e) => void saveDue({ date: shownDue.date, time: e.target.value })}
-          />
-        </label>
-      </div>
       <div className="todo-field">
         <span className="todo-label" id={`prio-${id}`}>
           Priority
@@ -210,14 +168,14 @@ function TodoDetails({ todo, items, send }: { todo: Todo; items: Todo[]; send: S
           {subs.length > 0 && (
             <ul className="todo-subtasks">
               {subs.map((s) => (
-                <li key={s.id} className="todo-subtask" data-todo-id={s.id} data-done={isDone(s) || undefined}>
+                <li key={s.id} className="todo-subtask">
                   <label>
                     <input
                       type="checkbox"
                       className="todo-check"
-                      checked={isDone(s)}
+                      checked={false}
                       disabled={busy}
-                      onChange={() => void run({ action: isDone(s) ? "reopen" : "done", id: s.id })}
+                      onChange={() => void run({ action: "done", id: s.id })}
                     />
                     <span>{s.name}</span>
                   </label>
@@ -239,9 +197,7 @@ function TodoDetails({ todo, items, send }: { todo: Todo; items: Todo[]; send: S
           <ol className="todo-thread">
             {todo.comments.map((c) => (
               <li key={c.id} className="todo-comment">
-                <span className="todo-comment-meta">
-                  {c.author} · <time dateTime={c.at}>{etTime(c.at)}</time>
-                </span>
+                <span className="todo-comment-meta">{c.author}</span>
                 <p>{linkify(c.text)}</p>
               </li>
             ))}

@@ -81,10 +81,10 @@ project tab, no hash means the Board. Arrow keys, Home and End move between tabs
 - **Answering on the page.** The card disappears right away, a toast says "Answered: Approve", the answer is kept
   in the browser (localStorage) and sent to the webhook as `decision.answered`. The answer becomes permanent when the
   CoS bot records it with `ab answer`. Until then the browser hides the card on its own.
-- **To-do** (beside the queue on wide screens, under it on narrow ones). Today includes overdue tasks. Upcoming
-  groups future due dates and undated work. Done shows recent completions. Change priority, add comments or subtasks,
-  and complete or reopen items in place. Quick add understands dates, times and priority, for example
-  `call the vendor Friday 3pm p1`. Due dates and times use America/New_York.
+- **To-do** (beside the queue on wide screens, under it on narrow ones). One running list shows open tasks
+  from urgent to low, with oldest first within each priority. Open **Done (N)** below the list to reopen completed tasks.
+  Change priority, add comments or subtasks, and complete items in place. Quick add recognizes priority tokens,
+  for example `call the vendor p1`.
 - **Footer**: "Board updated" and the board file's `updated_at`.
 - **Live updates.** The page follows the board file. Any change made with `bin/ab.mjs` (or by hand) shows on every
   open tab within about a second, with no reload, and typed text is kept.
@@ -679,22 +679,22 @@ later refreshes only need the ids and counts.
 
 The mutation commands take a JSON object as an argument or on stdin. `todo-add` takes a name or quick-add text.
 Explicit fields win over parsed quick-add fields. Priority defaults to medium and the id is generated when omitted.
-Use a top-level item's id as `parent_id` to add a subtask. Due dates use Eastern wall time.
+Use a top-level item's id as `parent_id` to add a subtask.
 
 ```sh
-node bin/ab.mjs todo-add '{"id":"call-vendor","quick":"call the vendor Friday 3pm p1"}'
+node bin/ab.mjs todo-add '{"id":"call-vendor","quick":"call the vendor p1"}'
 ```
 
 ```sh
-node bin/ab.mjs todo-update '{"id":"call-vendor","description":"Ask about the lease renewal","priority":"high","due":{"date":"2026-12-01","time":"09:30"}}'
+node bin/ab.mjs todo-update '{"id":"call-vendor","description":"Ask about the lease renewal","priority":"high"}'
 ```
 
 ```sh
-node bin/ab.mjs todo-comment '{"id":"call-vendor","text":"Left a voicemail at 3:05"}' --author Assistant
+node bin/ab.mjs todo-comment '{"id":"call-vendor","text":"Left a voicemail"}' --author Assistant
 ```
 
 ```sh
-node bin/ab.mjs todo-list --view today
+node bin/ab.mjs todo-list
 ```
 
 ```sh
@@ -705,8 +705,8 @@ node bin/ab.mjs todo-done '{"id":"call-vendor"}'
 node bin/ab.mjs todo-reopen '{"id":"call-vendor"}'
 ```
 
-Use `null` to clear an item's description, due date, or parent. Completing a parent leaves its subtasks open.
-`todo-list` also supports `upcoming`, `done`, and `all` (the default). Invalid input exits 2 and unknown ids exit 5.
+Use `null` to clear an item's description or parent. Completing a parent leaves its subtasks open.
+`todo-list` returns all items by default and supports `--view done` for completed items. Invalid input exits 2 and unknown ids exit 5.
 
 ## How a CoS bot raises a decision and builds its chat card
 
@@ -1002,7 +1002,7 @@ What the vitest files cover (`app/test/`):
 | `live.test.ts`, `live-board.test.tsx` | The file watcher, SSE feed and live page updates. |
 | `tabs.test.tsx`, `tab-keys.test.ts`, `project.test.tsx` | Tab navigation, shortcuts and the project tab. |
 | `feed.test.ts`, `prs.test.ts`, `prs-feed-ui.test.tsx`, `prs-hot.test.tsx`, `hot-route.test.ts`, `link-guard.test.ts` | GitHub feed, PR grouping and details, HOT changes, and evidence link validation. |
-| `todo-ui.test.tsx`, `todo-route.test.ts`, `todos.test.ts`, `quickadd.test.ts` | To-do actions, views, dates and quick add. |
+| `todo-ui.test.tsx`, `todo-route.test.ts`, `todos.test.ts`, `quickadd.test.ts` | To-do actions, priority sorting, completed items and quick add. |
 | `config.test.tsx`, `server-config.test.ts` | Assistant name, time zone, host and port settings. |
 
 Browser end to end checks (need Google Chrome; set `CHROME_PATH` if it is not in the default place):

@@ -5,8 +5,6 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import type { Board, Decision, Todo, Todos } from "../src/data/types";
-import { daysBetween, easternDate } from "../src/eastern";
-import { todayView } from "../src/todos";
 import { needsYou } from "../src/visibility";
 
 // Runs the bin/ab.mjs commands from README.md exactly as written, from the root of a temp repo whose
@@ -718,13 +716,7 @@ describe("README ab.mjs commands", () => {
     expect(add.status).toBe(0);
     const t: Todo = add.json().todo;
     expect(Object.keys(add.json())).toEqual(["ok", "todo"]);
-    expect(t).toEqual({ id: "call-vendor", name: "call the vendor", priority: "urgent", due: { date: expect.any(String), time: "15:00" }, comments: [], created_at: expect.any(String), updated_at: t.created_at });
-    expect(Object.keys(t)).toEqual(["id", "name", "priority", "due", "comments", "created_at", "updated_at"]);
-    // "Friday" is the coming Friday on the Eastern clock.
-    const today = easternDate(new Date());
-    expect(new Date(`${t.due!.date}T12:00:00Z`).getUTCDay()).toBe(5);
-    expect(daysBetween(today, t.due!.date)).toBeGreaterThanOrEqual(0);
-    expect(daysBetween(today, t.due!.date)).toBeLessThanOrEqual(7);
+    expect(t).toEqual({ id: "call-vendor", name: "call the vendor", priority: "urgent", comments: [], created_at: expect.any(String), updated_at: t.created_at });
     expect(readTodos().items).toEqual([t]);
     expect(readTodos().updated_at).not.toBe("2026-11-26T15:00:00.000Z");
     // The wrapper outside the markers is untouched, board.ts too; the add is logged.
@@ -737,23 +729,19 @@ describe("README ab.mjs commands", () => {
     const upd = run(todoUpdateCmd);
     expect(upd.status).toBe(0);
     const u: Todo = upd.json().todo;
-    expect(u).toEqual({ ...t, description: "Ask about the lease renewal", priority: "high", due: { date: "2026-12-01", time: "09:30" }, updated_at: expect.any(String) });
-    expect(Object.keys(u)).toEqual(["id", "name", "description", "priority", "due", "comments", "created_at", "updated_at"]);
+    expect(u).toEqual({ ...t, description: "Ask about the lease renewal", priority: "high", updated_at: expect.any(String) });
+    expect(Object.keys(u)).toEqual(["id", "name", "description", "priority", "comments", "created_at", "updated_at"]);
 
     const com = run(todoCommentCmd);
     expect(com.status).toBe(0);
-    expect(com.json().comment).toEqual({ id: expect.stringMatching(/^c-[0-9a-f]{8}$/), text: "Left a voicemail at 3:05", author: "Assistant", at: expect.any(String) });
+    expect(com.json().comment).toEqual({ id: expect.stringMatching(/^c-[0-9a-f]{8}$/), text: "Left a voicemail", author: "Assistant", at: expect.any(String) });
     expect(readTodos().items[0].comments).toEqual([com.json().comment]);
     // Without an author, a comment is by "bot".
     expect(run(`${AB} todo-comment '{"id":"call-vendor","text":"Second note"}'`).json().comment.author).toBe("bot");
 
-    // A to-do due today on the Eastern clock shows in today's list; the list is the page's Today view.
-    expect(run(`${AB} todo-add '{"id":"due-today","name":"Due today","due":{"date":"${today}"}}'`).status).toBe(0);
     const list = run(todoListCmd);
     expect(list.status).toBe(0);
-    expect(list.json()).toEqual(todayView(readTodos().items, new Date()));
-    expect(list.json().map((x: Todo) => x.id)).toContain("due-today");
-    expect(run(`${AB} todo-list`).json()).toEqual(readTodos().items);
+    expect(list.json()).toEqual(readTodos().items);
 
     const done = run(todoDoneCmd);
     expect(done.status).toBe(0);
@@ -789,16 +777,16 @@ describe("README ab.mjs commands", () => {
 
     writeFileSync(join(repo, "todo.json"), JSON.stringify({ quick: "renew passport tomorrow !low", name: "Renew passport", priority: "high" }));
     const fromStdin = run(`${AB} todo-add < todo.json`).json().todo;
-    expect(fromStdin).toMatchObject({ name: "Renew passport", priority: "high", due: { date: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/) } });
-    expect(fromStdin.due).not.toHaveProperty("time");
-    // An explicit due (or name) wins, and a quick text with no name is fine next to a name.
+    expect(fromStdin).toMatchObject({ name: "Renew passport", priority: "high" });
+    expect(fromStdin).not.toHaveProperty("due");
+    // The legacy due field is still accepted alongside quick add.
     expect(run(`${AB} todo-add '{"quick":"tomorrow p1","name":"Call the bank","due":{"date":"2027-01-04"}}'`).json().todo).toMatchObject({ name: "Call the bank", priority: "urgent", due: { date: "2027-01-04" } });
   });
 
   it("todo commands: refuse bad input with exit 2 and an unknown id with exit 5, todos.ts unchanged", () => {
     expect(run(todoAddCmd).status).toBe(0);
     const cases: [string, number, RegExp][] = [
-      [`${AB} todo-add '{"quick":"tomorrow p1"}'`, 2, /^ab: todo-add: quick add needs a name besides the date and priority/],
+      [`${AB} todo-add '{"quick":"p1"}'`, 2, /^ab: todo-add: quick add needs a name besides the priority/],
       [`${AB} todo-add '{"description":"x"}'`, 2, /^ab: todo-add: give name or quick/],
       [`${AB} todo-add '{"name":"  "}'`, 2, /^ab: todo-add: name must be a non-blank string/],
       [`${AB} todo-add '{"name":"${"x".repeat(201)}"}'`, 2, /^ab: todo-add: name is 201 chars; keep it to 200 or fewer/],

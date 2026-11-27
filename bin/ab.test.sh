@@ -653,9 +653,11 @@ dget() { node -e 'const s=require("fs").readFileSync(process.env.AB_TODOS_FILE,"
 td() { local c=$1; shift; node "$AB" "$c" "$@"; }
 derr() { local c=$1 j=$2 want=$3; node "$AB" "$c" "$j" 2>&1 | grep -qF "$want"; }
 TODAY=$(node -e 'const p=Object.fromEntries(new Intl.DateTimeFormat("en-US",{timeZone:"America/New_York",year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(new Date()).map(x=>[x.type,x.value]));console.log(p.year+"-"+p.month+"-"+p.day)')
-t 0 "todo-add quick"                       bash -c "node '$AB' todo-add '{\"id\":\"call-vendor\",\"quick\":\"call the vendor Friday 3pm p1\"}' | grep -q '\"name\":\"call the vendor\",\"priority\":\"urgent\",\"due\":{\"date\":\"[0-9-]*\",\"time\":\"15:00\"}'"
-t 0 "  ...due is a Friday"                 test "$(dget 'new Date(by("call-vendor").due.date+"T12:00:00Z").getUTCDay()')" = 5
-t 0 "todo-add name, due today, from stdin" bash -c "echo '{\"id\":\"pay-rent\",\"name\":\"Pay rent\",\"priority\":\"low\",\"due\":{\"date\":\"$TODAY\"}}' | node '$AB' todo-add | grep -q '\"id\":\"pay-rent\"'"
+t 0 "todo-add quick keeps date words"      td todo-add '{"id":"call-vendor","quick":"call the vendor Friday 3pm p1"}'
+t 0 "  ...stored without due"              test "$(dget '[by("call-vendor").name,by("call-vendor").priority,"due" in by("call-vendor")]')" = '["call the vendor Friday 3pm","urgent",false]'
+t 0 "todo-add without a date from stdin"   bash -c "echo '{\"id\":\"pay-rent\",\"name\":\"Pay rent\",\"priority\":\"low\"}' | node '$AB' todo-add"
+t 0 "  ...stores the named task without due" test "$(dget '[by("pay-rent").name,"due" in by("pay-rent")]')" = '["Pay rent",false]'
+t 0 "todo-update accepts a legacy due date" td todo-update '{"id":"pay-rent","due":{"date":"'"$TODAY"'"}}'
 t 0 "todo-add generates an id"             bash -c "node '$AB' todo-add '{\"name\":\"Find the lease PDF\",\"parent_id\":\"call-vendor\"}' | grep -q '\"id\":\"find-the-lease-pdf-[0-9a-f]\{6\}\"'"
 SUB=$(dget 't.items[2].id' | tr -d '"')
 t 0 "  ...stored as a subtask, default medium"  test "$(dget '[t.items[2].parent_id,t.items[2].priority,t.items.length]')" = '["call-vendor","medium",3]'
@@ -678,8 +680,8 @@ t 0 "  ...done_at gone"                    test "$(dget '"done_at" in by("call-v
 t 0 "todo-reopen again is a no-op"         bash -c "node '$AB' todo-reopen '{\"id\":\"call-vendor\"}' | grep -q '\"status\":\"already-open\"'"
 t 0 "todo commands are logged"             bash -c "for op in todo-add todo-update todo-comment todo-done todo-reopen; do grep -q '\"op\":\"'\$op'\"' '$T/app/.ab-log.jsonl' || exit 1; done"
 DSUM=$(cksum < "$AB_TODOS_FILE")
-t 2 "todo-add quick with no name refused"  td todo-add '{"quick":"tomorrow p1"}'
-t 0 "  ...says why"                        derr todo-add '{"quick":"tomorrow p1"}' 'ab: todo-add: quick add needs a name besides the date and priority'
+t 2 "todo-add quick with no name refused"  td todo-add '{"quick":"p1"}'
+t 0 "  ...says why"                        derr todo-add '{"quick":"p1"}' 'ab: todo-add: quick add needs a name besides the priority'
 t 2 "todo-add without name or quick refused"  td todo-add '{"priority":"high"}'
 t 2 "todo-add blank name refused"          td todo-add '{"name":"  "}'
 t 2 "todo-add 201-char name refused"       td todo-add '{"name":"'"$(printf 'a%.0s' $(seq 201))"'"}'

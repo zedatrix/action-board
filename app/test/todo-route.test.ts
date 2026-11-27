@@ -119,8 +119,9 @@ describe("POST /__ab/todo", () => {
   it("add: runs ab todo-add (quick parsed by ab) and replies with the stored to-do", async () => {
     const text = readFileSync(file, "utf8");
     const t = await ok({ action: "add", quick: "call the vendor Friday 3pm p1" });
-    expect(t).toMatchObject({ name: "call the vendor", priority: "urgent", due: { date: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/), time: "15:00" }, comments: [] });
-    expect(t.id).toMatch(/^call-the-vendor-[0-9a-f]{6}$/);
+    expect(t).toMatchObject({ name: "call the vendor Friday 3pm", priority: "urgent", comments: [] });
+    expect(t).not.toHaveProperty("due");
+    expect(t.id).toMatch(/^call-the-vendor-friday-3pm-[0-9a-f]{6}$/);
     expect(find(t.id)).toEqual(t);
     expect(read().items.map((x) => x.id)).toEqual(["lease", "old", t.id]);
     // The wrapper outside the markers is untouched; ab logged it next to the app.
@@ -139,9 +140,9 @@ describe("POST /__ab/todo", () => {
       description: "Renewal terms",
       due: { date: "2026-12-01", time: "09:30" },
     });
-    expect(await ok({ action: "update", id: "lease", due: null })).not.toHaveProperty("due");
 
     const c = await ok({ action: "comment", id: "lease", text: "  Landlord says Monday  " });
+    expect(c.due).toEqual({ date: "2026-12-01", time: "09:30" });
     expect(TODO_AUTHOR).toBe("User");
     expect(c.comments).toEqual([{ id: expect.stringMatching(/^c-[0-9a-f]{8}$/), text: "Landlord says Monday", author: "User", at: expect.any(String) }]);
 
@@ -150,6 +151,7 @@ describe("POST /__ab/todo", () => {
     expect(await ok({ action: "done", id: "lease" })).toEqual(done);
     expect(await ok({ action: "reopen", id: "lease" })).not.toHaveProperty("done_at");
     expect(find("lease")).not.toHaveProperty("done_at");
+    expect(find("lease")?.due).toEqual({ date: "2026-12-01", time: "09:30" });
   });
 
   it("maps an unknown id to 404 and ab's refusals to 400", async () => {
@@ -159,7 +161,7 @@ describe("POST /__ab/todo", () => {
     }
     for (const body of [
       { action: "add", name: " " },
-      { action: "add", quick: "tomorrow p1" },
+      { action: "add", quick: "p1" },
       { action: "add", name: "x", priority: "p1" },
       { action: "add", name: "x", due: { date: "2026-02-30" } },
       { action: "add", name: "x", parent_id: "nope" },

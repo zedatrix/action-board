@@ -385,7 +385,7 @@ export default function App({ prsPanel }: { prsPanel?: HTMLElement | null }) {
         </section>
 
         <aside className="glance">
-          <TodoList now={now} />
+          <TodoList />
         </aside>
       </main>
 
