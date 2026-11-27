@@ -11,16 +11,18 @@ describe("vite.config.ts host and port", () => {
     vi.stubEnv("ACTION_BOARD_HOST", "");
     vi.stubEnv("ACTION_BOARD_PORT", "");
     const cfg = await import("../vite.config");
+    const { server } = cfg.default({ command: "serve", mode: "development" });
     expect([cfg.BOARD_HOST, cfg.BOARD_PORT]).toEqual(["board.localhost", 8085]);
-    expect(cfg.default.server).toMatchObject({ host: "127.0.0.1", port: 8085, strictPort: true, allowedHosts: ["board.localhost"], open: false });
+    expect(server).toMatchObject({ host: "127.0.0.1", port: 8085, strictPort: true, allowedHosts: ["board.localhost"], open: false });
   });
 
   it("takes ACTION_BOARD_HOST and ACTION_BOARD_PORT from the environment", async () => {
     vi.stubEnv("ACTION_BOARD_HOST", "Team.Localhost");
     vi.stubEnv("ACTION_BOARD_PORT", "5199");
     const cfg = await import("../vite.config");
+    const { server } = cfg.default({ command: "serve", mode: "development" });
     expect([cfg.BOARD_HOST, cfg.BOARD_PORT]).toEqual(["team.localhost", 5199]);
-    expect(cfg.default.server).toMatchObject({ port: 5199, allowedHosts: ["team.localhost"] });
+    expect(server).toMatchObject({ port: 5199, allowedHosts: ["team.localhost"] });
   });
 
   it("opens the board's own URL only when start.sh sets AB_OPEN=1", async () => {
@@ -28,6 +30,7 @@ describe("vite.config.ts host and port", () => {
     vi.stubEnv("ACTION_BOARD_PORT", "");
     vi.stubEnv("AB_OPEN", "1");
     const cfg = await import("../vite.config");
-    expect(cfg.default.server?.open).toBe("http://board.localhost:8085/");
+    const { server } = cfg.default({ command: "serve", mode: "development" });
+    expect(server?.open).toBe("http://board.localhost:8085/");
   });
 });

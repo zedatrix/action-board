@@ -26,7 +26,7 @@ describe("needsYou", () => {
     expect(needsYou([decision("a", chatYes), decision("b")], {}).map((d) => d.id)).toEqual(["b"]);
   });
 
-  it("hides a decision answered locally in the app", () => {
+  it("hides a decision answered in this browser", () => {
     expect(needsYou([decision("a"), decision("b")], { a: { status: "pending" } }).map((d) => d.id)).toEqual(["b"]);
   });
 

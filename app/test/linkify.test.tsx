@@ -18,8 +18,8 @@ describe("linkify", () => {
   });
 
   it("finds several URLs and trims trailing punctuation", () => {
-    expect(links("a https://x.io/a, b http://y.io/b; c (https://z.io/c). d https://w.io/d?!")).toEqual([
-      "https://x.io/a",
+    expect(links("a https://example.com/a, b http://y.io/b; c (https://z.io/c). d https://w.io/d?!")).toEqual([
+      "https://example.com/a",
       "http://y.io/b",
       "https://z.io/c",
       "https://w.io/d",
@@ -27,7 +27,7 @@ describe("linkify", () => {
   });
 
   it("keeps query strings and fragments", () => {
-    expect(links("go to https://x.io/p?a=1&b=2#top now")).toEqual(["https://x.io/p?a=1&b=2#top"]);
+    expect(links("go to https://example.com/p?a=1&b=2#top now")).toEqual(["https://example.com/p?a=1&b=2#top"]);
   });
 
   it("ignores a bare scheme and non-http schemes", () => {
@@ -38,9 +38,9 @@ describe("linkify", () => {
 describe("bareUrl", () => {
   it("accepts a whole-text URL and rejects anything else", () => {
     expect(bareUrl("https://github.com/acme/example/pull/1800")).toBe("https://github.com/acme/example/pull/1800");
-    expect(bareUrl(" https://x.io/a ")).toBe("https://x.io/a");
+    expect(bareUrl(" https://example.com/a ")).toBe("https://example.com/a");
     expect(bareUrl("PROJ-4382")).toBeNull();
-    expect(bareUrl("https://x.io/a.")).toBeNull();
-    expect(bareUrl("see https://x.io/a")).toBeNull();
+    expect(bareUrl("https://example.com/a.")).toBeNull();
+    expect(bareUrl("see https://example.com/a")).toBeNull();
   });
 });

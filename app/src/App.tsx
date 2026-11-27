@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { board as bundledBoard } from "./data/board";
-import type { Board, Decision, Priority } from "./data/types";
+import type { Decision, Priority } from "./data/types";
 import { DecisionCard, type ClarifyState, type NotRelevantState } from "./DecisionCard";
 import {
   buildClarifyPayload,
@@ -20,11 +21,12 @@ import {
   type AppMessages,
   type MessageRecord,
 } from "./delivery";
-import { buildMessagePayload, glanceItem, itemKey, newMessageId, type BoardItem, type GlanceSection } from "./messages";
+import { buildMessagePayload, itemKey, newMessageId, type BoardItem } from "./messages";
 import { MessageAssistant, type Draft } from "./MessageAssistant";
-import { sortOthers } from "./others";
 import { effectivePriority, groupByPriority, PRIORITY_LABEL, PRIORITY_PATH, sortByPriority } from "./priority";
+import { PrsTab } from "./PrsTab";
 import { headerDate } from "./stamp";
+import { TodoList } from "./TodoList";
 import { useLiveBoard } from "./useLiveBoard";
 import { useNow } from "./useNow";
 import { needsYou } from "./visibility";
@@ -40,7 +42,9 @@ const sleep = (ms: number) => new Promise<void>((resolve) => window.setTimeout(r
 // The card for "Explain this better" comparisons: a priority change is not a rewording.
 const withoutPriority = ({ priority: _priority, ...rest }: Decision) => JSON.stringify(rest);
 
-export default function App() {
+// The Board: Needs you and the to-do list. It also renders the PRs tab into prsPanel (the tab's panel, from Tabs),
+// so PR entries share this board's live feed and Message Assistant composers. Without prsPanel there is no PRs view.
+export default function App({ prsPanel }: { prsPanel?: HTMLElement | null }) {
   const board = useLiveBoard(bundledBoard);
   // One clock for every card's stamp and the header date, ticking each minute.
   const now = useNow();
@@ -380,8 +384,12 @@ export default function App() {
           )}
         </section>
 
-        <GlanceStrip glance={board.glance} renderMessage={renderMessage} />
+        <aside className="glance">
+          <TodoList now={now} />
+        </aside>
       </main>
+
+      {prsPanel && createPortal(<PrsTab glance={board.glance} hot={board.hot} renderMessage={renderMessage} />, prsPanel)}
 
       <footer className="footer">Board updated {new Date(board.updated_at).toLocaleString()}</footer>
 
@@ -393,84 +401,5 @@ export default function App() {
         ))}
       </div>
     </div>
-  );
-}
-
-function Item({ link, children }: { link?: string; children: ReactNode }) {
-  if (!link) return <div className="item">{children}</div>;
-  return (
-    <a className="item" href={link} target="_blank" rel="noopener noreferrer">
-      {children}
-    </a>
-  );
-}
-
-function Panel({ title, count, children }: { title: string; count: number; children: ReactNode }) {
-  return (
-    <section className="panel">
-      <h3>
-        {title} <span className="n">{count}</span>
-      </h3>
-      {count === 0 ? <p className="panel-empty">Nothing here.</p> : <ul>{children}</ul>}
-    </section>
-  );
-}
-
-type RenderMessage = (item: BoardItem) => ReactNode;
-
-// React keys from item_id, so list items (and their composers) follow the item, not its position.
-// A repeated item_id within one list gets a suffix to keep keys unique.
-function keyed<T extends NonNullable<Board["glance"][GlanceSection]>[number]>(section: GlanceSection, items: T[]): { key: string; item: T; ref: BoardItem }[] {
-  const seen = new Map<string, number>();
-  return items.map((item) => {
-    const ref = glanceItem(section, item);
-    const n = seen.get(ref.item_id) ?? 0;
-    seen.set(ref.item_id, n + 1);
-    return { key: n ? `${ref.item_id}#${n}` : ref.item_id, item, ref };
-  });
-}
-
-function Row({ item, link, message, children }: { item: BoardItem; link?: string; message: RenderMessage; children: ReactNode }) {
-  return (
-    <li className="row" data-item-id={item.item_id} data-item-section={item.item_section}>
-      <Item link={link}>{children}</Item>
-      {message(item)}
-    </li>
-  );
-}
-
-function GlanceStrip({ glance, renderMessage }: { glance: Board["glance"]; renderMessage: RenderMessage }) {
-  // Older files have no others list; treat it as empty.
-  const others = sortOthers(glance.others ?? []);
-  return (
-    <aside className="glance">
-      <Panel title="Waiting on others" count={glance.waiting.length}>
-        {keyed("waiting", glance.waiting).map(({ key, item: w, ref }) => (
-          <Row key={key} item={ref} link={w.link} message={renderMessage}>
-            <span className="title">{w.title}</span>
-            <span className="meta">{w.who}</span>
-          </Row>
-        ))}
-      </Panel>
-      <Panel title="Others' PRs with you" count={others.length}>
-        {keyed("others", others).map(({ key, item: o, ref }) => (
-          <Row key={key} item={ref} link={o.link} message={renderMessage}>
-            <span className="title">{o.title}</span>
-            <span className="meta">{`${o.author} · ${o.who}`}</span>
-          </Row>
-        ))}
-      </Panel>
-      <Panel title="Tickets with no PR yet" count={glance.tickets.length}>
-        {keyed("tickets", glance.tickets).map(({ key, item: t, ref }) => (
-          <Row key={key} item={ref} link={t.link} message={renderMessage}>
-            <span className="title">
-              <span className="tid">{t.id}</span>
-              {t.title}
-            </span>
-            <span className={/review/i.test(t.status) ? "status review" : "status"}>{t.status}</span>
-          </Row>
-        ))}
-      </Panel>
-    </aside>
   );
 }

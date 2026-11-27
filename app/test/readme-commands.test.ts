@@ -1,10 +1,12 @@
-import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { captureCommand } from "./capture-command";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import type { Board, Decision } from "../src/data/types";
+import type { Board, Decision, Todo, Todos } from "../src/data/types";
+import { daysBetween, easternDate } from "../src/eastern";
+import { todayView } from "../src/todos";
 import { needsYou } from "../src/visibility";
 
 // Runs the bin/ab.mjs commands from README.md exactly as written, from the root of a temp repo whose
@@ -13,7 +15,8 @@ const ROOT = fileURLToPath(new URL("../..", import.meta.url));
 const README = readFileSync(join(ROOT, "README.md"), "utf8");
 const AB = "node bin/ab.mjs";
 const commands = [...README.matchAll(/```sh\n(node bin\/ab\.mjs [^\n]+)\n```/g)].map((m) => m[1]);
-const [raiseCmd, answerCmd, answerMultiCmd, answerCustomCmd, clearCmd, restoreCmd, priorityCmd, glanceCmd, openCmd, checkCmd, lintCmd, backfillCmd, backfillTitlesCmd, projectCmd] = commands;
+const [raiseCmd, answerCmd, answerMultiCmd, answerCustomCmd, clearCmd, restoreCmd, priorityCmd, glanceCmd, hotCmd, unhotCmd, openCmd, checkCmd, lintCmd, backfillCmd, backfillTitlesCmd, projectCmd,
+  todoAddCmd, todoUpdateCmd, todoCommentCmd, todoListCmd, todoDoneCmd, todoReopenCmd] = commands;
 
 const repo = mkdtempSync(join(tmpdir(), "ab-readme-"));
 const appDir = join(repo, "app");
@@ -21,6 +24,9 @@ const file = join(appDir, "src/data/board.ts");
 const cleared = join(appDir, ".ab-cleared.jsonl");
 const abLog = join(appDir, ".ab-log.jsonl");
 const projectFile = join(appDir, "src/data/project.ts");
+const todosFile = join(appDir, "src/data/todos.ts");
+// The hot/unhot event log: a temp file, never the repo's data/events.jsonl.
+const eventsFile = join(repo, "data/events.jsonl");
 mkdirSync(join(appDir, "src/data"), { recursive: true });
 mkdirSync(join(repo, "bin"));
 symlinkSync(join(ROOT, "bin/ab.mjs"), join(repo, "bin/ab.mjs"));
@@ -60,20 +66,27 @@ const notify: Decision = {
   created_at: "2026-11-10T08:00:00.000Z",
 };
 
-// A fresh temp board.ts (the real file's text, with known decisions) and no cleared ids or log.
+const DA = "/* TODOS-JSON-START */";
+const DZ = "/* TODOS-JSON-END */";
+const originalTodos = readFileSync(join(ROOT, "app/src/data/todos.ts"), "utf8");
+const todosSeed = originalTodos.slice(0, originalTodos.indexOf(DA) + DA.length) + "\n" + JSON.stringify({ updated_at: "2026-11-26T15:00:00.000Z", items: [] }, null, 2) + "\n" + originalTodos.slice(originalTodos.indexOf(DZ));
+
+// A fresh temp board.ts (the real file's text, with known decisions), an empty temp todos.ts, and no cleared ids or log.
 const seed = (decisions: Decision[]) => {
   const b: Board = { updated_at: "2026-11-10T08:00:00.000Z", decisions, glance: glance0 };
   writeFileSync(file, original.slice(0, original.indexOf(A) + A.length) + "\n" + JSON.stringify(b, null, 2) + "\n" + original.slice(original.indexOf(Z)));
+  writeFileSync(todosFile, todosSeed);
   rmSync(cleared, { force: true });
   rmSync(abLog, { force: true });
+  rmSync(eventsFile, { force: true });
 };
 beforeEach(() => seed([]));
 
 const run = (cmd: string, extra: NodeJS.ProcessEnv = {}) => {
-  const env: NodeJS.ProcessEnv = { ...process.env, AB_FILE: file, AB_NO_SERVER: "1" };
-  for (const k of ["AB_URL", "ACTION_BOARD_HOST", "ACTION_BOARD_PORT", "AB_MAX_HIGH"]) delete env[k];
+  const env: NodeJS.ProcessEnv = { ...process.env, AB_FILE: file, AB_EVENTS_FILE: eventsFile, AB_NO_SERVER: "1" };
+  for (const k of ["AB_URL", "AB_TODOS_FILE", "ACTION_BOARD_HOST", "ACTION_BOARD_PORT", "AB_MAX_HIGH"]) delete env[k];
   Object.assign(env, extra);
-  const r = spawnSync("bash", ["-c", cmd], { cwd: repo, env, encoding: "utf8", timeout: 10000 });
+  const r = captureCommand("bash", ["-c", cmd], { cwd: repo, env, timeout: 10000 });
   return { status: r.status, out: r.stdout, err: r.stderr, json: () => JSON.parse(r.stdout) };
 };
 const read = (): Board => {
@@ -95,7 +108,10 @@ const refused = (cmd: string, code: number, msg: RegExp) => {
 
 describe("README ab.mjs commands", () => {
   it("finds one command per subcommand, plus multi-select and free-text answers", () => {
-    expect(commands.map((c) => c.split(" ")[2])).toEqual(["raise", "answer", "answer", "answer", "clear", "restore", "priority", "glance", "open", "check", "lint", "backfill-stamps", "backfill-titles", "project-refresh"]);
+    expect(commands.map((c) => c.split(" ")[2])).toEqual([
+      "raise", "answer", "answer", "answer", "clear", "restore", "priority", "glance", "hot", "unhot", "open", "check", "lint", "backfill-stamps", "backfill-titles", "project-refresh",
+      "todo-add", "todo-update", "todo-comment", "todo-list", "todo-done", "todo-reopen",
+    ]);
     expect(raiseCmd).not.toMatch(/'.*'.*'/);
     expect(answerMultiCmd).toBe(`${AB} answer offsite-venue-quotes lakeside,farm --by app --at 2026-11-10T09:05:00.000Z`);
     expect(answerCustomCmd).toBe(`${AB} answer vendor-contract-q3 --custom "Approve if the term drops to 6 months" --by chat`);
@@ -148,14 +164,13 @@ describe("README ab.mjs commands", () => {
     expect(read().decisions).toHaveLength(1);
   });
 
-  it("raise: link stands in for card_ref, and the JSON can come from stdin", () => {
+  it("raise: link is stored and stands in for a missing card_ref, and the JSON can come from stdin", () => {
     const { card_ref: _, ...rest } = raiseJson;
     writeFileSync(join(repo, "d.json"), JSON.stringify({ ...rest, id: "from-stdin", link: "https://example.com/pr/1", multiSelect: true }));
     const r = run(`${AB} raise < d.json`);
     expect(r.status).toBe(0);
     expect(r.json().card).toMatchObject({ link: "https://example.com/pr/1", multiSelect: true });
-    expect(find("from-stdin")).toMatchObject({ card_ref: "https://example.com/pr/1", multiSelect: true });
-    expect(find("from-stdin")).not.toHaveProperty("link");
+    expect(find("from-stdin")).toMatchObject({ card_ref: "https://example.com/pr/1", link: "https://example.com/pr/1", multiSelect: true });
   });
 
   it("raise: refuses bad input with exit 2", () => {
@@ -166,7 +181,7 @@ describe("README ab.mjs commands", () => {
       [{ ...raiseJson, title: "  " }, /title is required/],
       [{ ...raiseJson, answer: { answer: "approve" } }, /unknown field answer/],
       [{ ...raiseJson, updated_at: "2026-11-10T09:00:00.000Z" }, /unknown field updated_at/],
-      [{ ...raiseJson, id: "Merge_1461" }, /id must be lowercase-kebab/],
+      [{ ...raiseJson, id: "Merge_11461" }, /id must be lowercase-kebab/],
       [{ ...raiseJson, id: "ab" }, /id must be lowercase-kebab/],
       [{ ...raiseJson, question: "" }, /need question and what_happens_after/],
       [{ ...raiseJson, options: [] }, /need at least one option/],
@@ -176,13 +191,13 @@ describe("README ab.mjs commands", () => {
       [{ ...raiseJson, multiSelect: "yes" }, /multiSelect must be true or false/],
       [{ ...raiseJson, allowCustom: 0 }, /allowCustom must be true or false/],
       [{ ...raiseJson, context: undefined }, /^ab: context is required/],
-      [{ ...raiseJson, context: "PROJ-4382 #1461" }, /^ab: context needs at least 6 plain words/],
+      [{ ...raiseJson, context: "PROJ-14382 #11461" }, /^ab: context needs at least 6 plain words/],
       [{ ...raiseJson, question: "Should the PR be merged now?" }, /^ab: question: "the PR" is vague\. Name the thing in plain words/],
       [{ ...raiseJson, question: "Merge it now?" }, /^ab: question: "it" is vague/],
-      [{ ...raiseJson, title: "Merge #1461?" }, /^ab: title: "Merge #1461\?" is only an id\. Add plain words/],
+      [{ ...raiseJson, title: "Merge #11461?" }, /^ab: title: "Merge #11461\?" is only an id\. Add plain words/],
       [{ ...raiseJson, title: "a".repeat(61) }, /^ab: title is 61 chars; keep it to 60 or fewer/],
       [{ ...raiseJson, title: "Q3 vendor\ncontract renewal" }, /^ab: title must be one line/],
-      [{ ...raiseJson, title: 1461 }, /^ab: title is required/],
+      [{ ...raiseJson, title: 11461 }, /^ab: title is required/],
       [{ ...raiseJson, blocking: undefined }, /^ab: blocking is required: true only if a named open PR, merge or task cannot move until this is answered, and then blocks names it; else false$/m],
       [{ ...raiseJson, blocking: "yes" }, /^ab: blocking is required/],
       [{ ...raiseJson, blocking: true, blocks: "Signing the Q3 hosting contract", priority: "medium" }, /^ab: blocking cards are always high priority/],
@@ -403,7 +418,7 @@ describe("README ab.mjs commands", () => {
 
   it("glance: refuses a bad others list or item, board unchanged", () => {
     const glance = { waiting: [], tickets: [] };
-    const ok = { title: "T", author: "A", who: "W", link: "https://x.y/1" };
+    const ok = { title: "T", author: "A", who: "W", link: "https://example.com/1" };
     const cases: [unknown, RegExp][] = [
       [{}, /glance\.others must be an array/],
       [[{ ...ok, author: undefined }], /glance\.others\[0\]\.author must be a non-blank string/],
@@ -424,6 +439,94 @@ describe("README ab.mjs commands", () => {
     refused(glanceCmd, 2, /glance\.parked is retired: raise those as decisions with "ab raise" instead/);
     writeFileSync(join(repo, "glance.json"), JSON.stringify({ ...glance, parked: {} }));
     refused(glanceCmd, 2, /glance\.parked must be an array/);
+  });
+
+  it("glance: accepts base, head and hot on PR items, keeps hot markers across a refresh, an explicit hot wins", () => {
+    const pr = { title: "Analytics for The dashboard", who: "Bob's re-review", link: "https://github.com/acme/example-api/pull/11764", base: "project", head: "PROJ-1-analytics" };
+    const other = { title: "Tax tiers", author: "Bob", who: "Your review requested", link: "https://github.com/o/r/pull/1", base: "main", head: "hotfix/tax", hot: true };
+    const glance = (g: object) => writeFileSync(join(repo, "glance.json"), JSON.stringify({ tickets: [], ...g }));
+    glance({ waiting: [pr], others: [other] });
+    expect(run(glanceCmd).json()).toEqual({ ok: true, live: true, counts: { waiting: 1, tickets: 0, others: 1 } });
+    expect(read().glance).toStrictEqual({ waiting: [pr], tickets: [], others: [other] });
+
+    // A routine refresh without hot keys keeps the marker on the same link, and only there.
+    const { hot: _, ...plain } = other;
+    glance({ waiting: [pr], others: [plain, { ...plain, link: "https://github.com/o/r/pull/2" }] });
+    expect(run(glanceCmd).status).toBe(0);
+    expect(read().glance.others).toStrictEqual([other, { ...plain, link: "https://github.com/o/r/pull/2" }]);
+    expect(read().glance.waiting).toStrictEqual([pr]);
+    // The marker follows the link across lists too.
+    glance({ waiting: [{ ...pr, link: other.link }], others: [] });
+    expect(run(glanceCmd).status).toBe(0);
+    expect(read().glance.waiting).toStrictEqual([{ ...pr, link: other.link, hot: true }]);
+    // An explicit hot:false wins.
+    glance({ waiting: [{ ...pr, link: other.link, hot: false }], others: [] });
+    expect(run(glanceCmd).status).toBe(0);
+    expect(read().glance.waiting).toStrictEqual([{ ...pr, link: other.link, hot: false }]);
+
+    const cases: [object, RegExp][] = [
+      [{ waiting: [{ ...pr, base: " " }], others: [] }, /glance\.waiting\[0\]\.base must be a non-blank string \(a branch name\)/],
+      [{ waiting: [], others: [{ ...other, head: 3 }] }, /glance\.others\[0\]\.head must be a non-blank string/],
+      [{ waiting: [], others: [{ ...other, hot: "yes" }] }, /glance\.others\[0\]\.hot must be true or false/],
+      [{ waiting: [pr, { ...pr, hot: 1 }], others: [] }, /glance\.waiting\[1\]\.hot must be true or false/],
+    ];
+    for (const [g, msg] of cases) {
+      glance(g);
+      refused(glanceCmd, 2, msg);
+    }
+  });
+
+  it("hot and unhot: as written, record the mark in the hot map and on the glance PRs with that link, log real changes", () => {
+    const link = "https://github.com/acme/example-api/pull/11764";
+    const mine = { title: "Analytics for The dashboard", who: "Bob's re-review", link };
+    const theirs = { title: "Tax tiers", author: "Bob", who: "Your review requested", link, base: "project" };
+    const lone = { ...theirs, link: "https://github.com/acme/example-web/pull/7" };
+    const b = read();
+    writeFileSync(file, original.slice(0, original.indexOf(A) + A.length) + "\n" + JSON.stringify({ ...b, glance: { waiting: [mine], tickets: [], others: [theirs, lone] } }, null, 2) + "\n" + original.slice(original.indexOf(Z)));
+    const events = () => (existsSync(eventsFile) ? readFileSync(eventsFile, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)) : []);
+
+    expect(hotCmd).toBe(`${AB} hot ${link}`);
+    const r = run(hotCmd);
+    expect(r.status).toBe(0);
+    const mark = { hot: true, by: "cli", at: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/) };
+    const stamp = { hot_by: "cli", hot_at: r.json().mark.at };
+    expect(r.json()).toEqual({ ok: true, live: true, section: "waiting", item: { ...mine, hot: true, ...stamp }, mark, status: "changed" });
+    expect(read().hot).toEqual({ [link]: mark });
+    // Every glance PR with that link gets it; the reply names the first (waiting first).
+    expect(read().glance).toStrictEqual({ waiting: [{ ...mine, hot: true, ...stamp }], tickets: [], others: [{ ...theirs, hot: true, ...stamp }, lone] });
+    expect(read().updated_at).not.toBe(b.updated_at);
+    expect(readFileSync(abLog, "utf8")).toMatch(/"op":"hot","link":"https:\/\/github\.com\/acme\/example-api\/pull\/11764","section":"waiting","live":true\}/);
+    expect(events()).toEqual([{ at: stamp.hot_at, kind: "hot", url: link, by: "cli" }]);
+    // Again: already hot, nothing written or logged.
+    const before = readFileSync(file, "utf8");
+    expect(run(hotCmd).json()).toMatchObject({ ok: true, status: "unchanged", mark: { hot: true, by: "cli", at: stamp.hot_at } });
+    expect(readFileSync(file, "utf8")).toBe(before);
+    expect(events()).toHaveLength(1);
+
+    expect(run(`${AB} hot ${lone.link} --by assistant`).json()).toMatchObject({ section: "others", item: { ...lone, hot: true, hot_by: "assistant" }, status: "changed" });
+
+    expect(unhotCmd).toBe(`${AB} unhot ${link}`);
+    const u = run(unhotCmd).json();
+    expect(u).toEqual({ ok: true, live: true, section: "waiting", item: { ...mine, hot_by: "cli", hot_at: u.mark.at }, mark: { ...mark, hot: false }, status: "changed" });
+    expect(read().glance.waiting).toStrictEqual([{ ...mine, hot_by: "cli", hot_at: u.mark.at }]);
+    expect(read().hot?.[link]).toEqual({ hot: false, by: "cli", at: u.mark.at });
+    expect(run(unhotCmd).json()).toMatchObject({ status: "unchanged" });
+    expect(events().map((e) => [e.kind, e.url, e.by])).toEqual([["hot", link, "cli"], ["hot", lone.link, "assistant"], ["unhot", link, "cli"]]);
+
+    // A PR in no glance list: only the hot map entry (the PRs tab flame on a feed row with no board card).
+    const glanceBefore = read().glance;
+    const feedOnly = "https://github.com/acme/example-api/pull/404";
+    expect(run(`${AB} hot ${feedOnly}/`).json()).toEqual({ ok: true, live: true, section: null, item: null, mark, status: "changed" });
+    expect(read().hot?.[feedOnly]).toMatchObject({ hot: true, by: "cli" });
+    expect(read().glance).toStrictEqual(glanceBefore);
+
+    refused(`${AB} hot https://github.com/bad_owner/example-api/pull/404`, 2, /the owner is missing or invalid/);
+    refused(`${AB} unhot ${link}/files`, 2, /nothing may follow the PR number/);
+    refused(`${AB} hot ${link} --by "assistant bot"`, 2, /^ab: hot: --by must be 1 to 32 letters, digits, _ or -/);
+    refused(`${AB} hot`, 2, /^ab: usage: ab hot <pr-url> \[--by name\]/);
+    refused(`${AB} hot pull/11764`, 2, /usage: ab hot <pr-url>/);
+    refused(`${AB} unhot ${link} ${lone.link}`, 2, /usage: ab unhot <pr-url>/);
+    expect(events()).toHaveLength(4);
   });
 
   it("open and check: as written, and check exits 1 when chat and board disagree", () => {
@@ -594,5 +697,156 @@ describe("README ab.mjs commands", () => {
     expect(readFileSync(projectFile, "utf8")).toBe(real);
     expect(real.indexOf(PA)).toBeGreaterThan(0);
     expect(readFileSync(abLog, "utf8")).toMatch(/"op":"project-refresh","milestones":4\}/);
+  });
+
+  const readTodos = (): Todos => {
+    const s = readFileSync(todosFile, "utf8");
+    return JSON.parse(s.slice(s.indexOf(DA) + DA.length, s.indexOf(DZ)));
+  };
+  // Runs a refused todo command and checks the exit code, the message, and that todos.ts did not change.
+  const refusedTodo = (cmd: string, code: number, msg: RegExp) => {
+    const before = readFileSync(todosFile, "utf8");
+    const r = run(cmd);
+    expect([cmd, r.status]).toEqual([cmd, code]);
+    expect(r.err).toMatch(msg);
+    expect(readFileSync(todosFile, "utf8")).toBe(before);
+  };
+
+  it("todo-add, todo-update, todo-comment, todo-done, todo-reopen and todo-list: as written", () => {
+    const boardBefore = readFileSync(file, "utf8");
+    const add = run(todoAddCmd);
+    expect(add.status).toBe(0);
+    const t: Todo = add.json().todo;
+    expect(Object.keys(add.json())).toEqual(["ok", "todo"]);
+    expect(t).toEqual({ id: "call-vendor", name: "call the vendor", priority: "urgent", due: { date: expect.any(String), time: "15:00" }, comments: [], created_at: expect.any(String), updated_at: t.created_at });
+    expect(Object.keys(t)).toEqual(["id", "name", "priority", "due", "comments", "created_at", "updated_at"]);
+    // "Friday" is the coming Friday on the Eastern clock.
+    const today = easternDate(new Date());
+    expect(new Date(`${t.due!.date}T12:00:00Z`).getUTCDay()).toBe(5);
+    expect(daysBetween(today, t.due!.date)).toBeGreaterThanOrEqual(0);
+    expect(daysBetween(today, t.due!.date)).toBeLessThanOrEqual(7);
+    expect(readTodos().items).toEqual([t]);
+    expect(readTodos().updated_at).not.toBe("2026-11-26T15:00:00.000Z");
+    // The wrapper outside the markers is untouched, board.ts too; the add is logged.
+    const s = readFileSync(todosFile, "utf8");
+    expect(s.slice(0, s.indexOf(DA))).toBe(todosSeed.slice(0, todosSeed.indexOf(DA)));
+    expect(s.slice(s.indexOf(DZ))).toBe(todosSeed.slice(todosSeed.indexOf(DZ)));
+    expect(readFileSync(file, "utf8")).toBe(boardBefore);
+    expect(readFileSync(abLog, "utf8")).toMatch(/"op":"todo-add","id":"call-vendor"\}/);
+
+    const upd = run(todoUpdateCmd);
+    expect(upd.status).toBe(0);
+    const u: Todo = upd.json().todo;
+    expect(u).toEqual({ ...t, description: "Ask about the lease renewal", priority: "high", due: { date: "2026-12-01", time: "09:30" }, updated_at: expect.any(String) });
+    expect(Object.keys(u)).toEqual(["id", "name", "description", "priority", "due", "comments", "created_at", "updated_at"]);
+
+    const com = run(todoCommentCmd);
+    expect(com.status).toBe(0);
+    expect(com.json().comment).toEqual({ id: expect.stringMatching(/^c-[0-9a-f]{8}$/), text: "Left a voicemail at 3:05", author: "Assistant", at: expect.any(String) });
+    expect(readTodos().items[0].comments).toEqual([com.json().comment]);
+    // Without an author, a comment is by "bot".
+    expect(run(`${AB} todo-comment '{"id":"call-vendor","text":"Second note"}'`).json().comment.author).toBe("bot");
+
+    // A to-do due today on the Eastern clock shows in today's list; the list is the page's Today view.
+    expect(run(`${AB} todo-add '{"id":"due-today","name":"Due today","due":{"date":"${today}"}}'`).status).toBe(0);
+    const list = run(todoListCmd);
+    expect(list.status).toBe(0);
+    expect(list.json()).toEqual(todayView(readTodos().items, new Date()));
+    expect(list.json().map((x: Todo) => x.id)).toContain("due-today");
+    expect(run(`${AB} todo-list`).json()).toEqual(readTodos().items);
+
+    const done = run(todoDoneCmd);
+    expect(done.status).toBe(0);
+    expect(done.json()).toMatchObject({ ok: true, status: "done", todo: { id: "call-vendor", done_at: expect.any(String) } });
+    expect(Math.abs(Date.parse(done.json().todo.done_at) - Date.now())).toBeLessThan(60_000);
+    expect(run(todoDoneCmd).json()).toEqual({ ...done.json(), status: "already-done" });
+    expect(run(`${AB} todo-list --view done`).json().map((x: Todo) => x.id)).toEqual(["call-vendor"]);
+
+    const reopen = run(todoReopenCmd);
+    expect(reopen.status).toBe(0);
+    expect(reopen.json()).toMatchObject({ ok: true, status: "reopened" });
+    expect(reopen.json().todo).not.toHaveProperty("done_at");
+    expect(run(todoReopenCmd).json()).toMatchObject({ status: "already-open" });
+    for (const op of ["todo-update", "todo-comment", "todo-done", "todo-reopen"]) expect(readFileSync(abLog, "utf8")).toContain(`"op":"${op}","id":"call-vendor"`);
+  });
+
+  it("todo-add: subtasks one level deep; generated ids; stdin input; quick with explicit fields", () => {
+    expect(run(todoAddCmd).status).toBe(0);
+    const sub = run(`${AB} todo-add '{"name":"Find the lease PDF","parent_id":"call-vendor"}'`).json().todo;
+    expect(sub).toMatchObject({ name: "Find the lease PDF", parent_id: "call-vendor", priority: "medium" });
+    expect(sub.id).toMatch(/^find-the-lease-pdf-[0-9a-f]{6}$/);
+    refusedTodo(`${AB} todo-add '{"name":"Too deep","parent_id":"${sub.id}"}'`, 2, new RegExp(`^ab: todo-add: parent_id ${sub.id} is a subtask itself; subtasks go one level deep`));
+    refusedTodo(`${AB} todo-update '{"id":"call-vendor","parent_id":"${sub.id}"}'`, 2, /is a subtask itself/);
+
+    // Completing the parent leaves the subtask open.
+    expect(run(todoDoneCmd).status).toBe(0);
+    expect(readTodos().items.find((x) => x.id === sub.id)).not.toHaveProperty("done_at");
+    // A parent with subtasks cannot become a subtask; a cleared parent_id makes the subtask top-level.
+    expect(run(`${AB} todo-add '{"id":"other-parent","name":"Other parent"}'`).status).toBe(0);
+    refusedTodo(`${AB} todo-update '{"id":"call-vendor","parent_id":"other-parent"}'`, 2, /call-vendor has subtasks, so it cannot become a subtask/);
+    expect(run(`${AB} todo-update '{"id":"${sub.id}","parent_id":null,"description":"In the drawer"}'`).json().todo).not.toHaveProperty("parent_id");
+    expect(run(`${AB} todo-update '{"id":"${sub.id}","description":null}'`).json().todo).not.toHaveProperty("description");
+
+    writeFileSync(join(repo, "todo.json"), JSON.stringify({ quick: "renew passport tomorrow !low", name: "Renew passport", priority: "high" }));
+    const fromStdin = run(`${AB} todo-add < todo.json`).json().todo;
+    expect(fromStdin).toMatchObject({ name: "Renew passport", priority: "high", due: { date: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/) } });
+    expect(fromStdin.due).not.toHaveProperty("time");
+    // An explicit due (or name) wins, and a quick text with no name is fine next to a name.
+    expect(run(`${AB} todo-add '{"quick":"tomorrow p1","name":"Call the bank","due":{"date":"2027-01-04"}}'`).json().todo).toMatchObject({ name: "Call the bank", priority: "urgent", due: { date: "2027-01-04" } });
+  });
+
+  it("todo commands: refuse bad input with exit 2 and an unknown id with exit 5, todos.ts unchanged", () => {
+    expect(run(todoAddCmd).status).toBe(0);
+    const cases: [string, number, RegExp][] = [
+      [`${AB} todo-add '{"quick":"tomorrow p1"}'`, 2, /^ab: todo-add: quick add needs a name besides the date and priority/],
+      [`${AB} todo-add '{"description":"x"}'`, 2, /^ab: todo-add: give name or quick/],
+      [`${AB} todo-add '{"name":"  "}'`, 2, /^ab: todo-add: name must be a non-blank string/],
+      [`${AB} todo-add '{"name":"${"x".repeat(201)}"}'`, 2, /^ab: todo-add: name is 201 chars; keep it to 200 or fewer/],
+      [`${AB} todo-add '{"name":"x","priority":"p1"}'`, 2, /^ab: todo-add: priority must be urgent, high, medium or low/],
+      [`${AB} todo-add '{"name":"x","due":{"date":"2026-02-30"}}'`, 2, /^ab: todo-add: due\.date must be a real calendar date written YYYY-MM-DD/],
+      [`${AB} todo-add '{"name":"x","due":{"date":"2026-12-01","time":"25:00"}}'`, 2, /^ab: todo-add: due\.time must be HH:MM/],
+      [`${AB} todo-add '{"name":"x","due":{"date":"2026-12-01","tz":"UTC"}}'`, 2, /^ab: todo-add: due has unknown key tz/],
+      [`${AB} todo-add '{"name":"x","due":"2026-12-01"}'`, 2, /^ab: todo-add: due must be/],
+      [`${AB} todo-add '{"name":"x","color":"red"}'`, 2, /^ab: todo-add: unknown key color \(allowed: id, name, description, priority, due, parent_id, quick\)/],
+      [`${AB} todo-add '{"name":"x","parent_id":"nope"}'`, 2, /^ab: todo-add: parent_id nope is not a to-do/],
+      [`${AB} todo-add '{"id":"call-vendor","name":"x"}'`, 2, /^ab: todo-add: id call-vendor is already a to-do/],
+      [`${AB} todo-add '{"id":"Bad Id","name":"x"}'`, 2, /^ab: todo-add: id must be lowercase kebab/],
+      [`${AB} todo-add '{"name":}'`, 2, /^ab: todo-add: input is not valid JSON/],
+      [`${AB} todo-add '["x"]'`, 2, /^ab: todo-add: (input must be a JSON object|usage)/],
+      [`${AB} todo-update '{"id":"call-vendor"}'`, 2, /^ab: todo-update: give at least one of name, description, priority, due, parent_id/],
+      [`${AB} todo-update '{"id":"call-vendor","name":null}'`, 2, /^ab: todo-update: name must be a non-blank string/],
+      [`${AB} todo-update '{"id":"call-vendor","parent_id":"call-vendor"}'`, 2, /^ab: todo-update: a to-do cannot be its own parent/],
+      [`${AB} todo-update '{"name":"x"}'`, 2, /^ab: todo-update: id is required/],
+      [`${AB} todo-update '{"id":"nope","name":"x"}'`, 5, /^ab: todo-update: no to-do nope/],
+      [`${AB} todo-comment '{"id":"call-vendor","text":"  "}'`, 2, /^ab: todo-comment: text must be a non-blank string/],
+      [`${AB} todo-comment '{"id":"call-vendor","text":"${"x".repeat(4001)}"}'`, 2, /^ab: todo-comment: text is 4001 chars; keep it to 4000 or fewer/],
+      [`${AB} todo-comment '{"id":"call-vendor","text":"x","author":"Assistant"}' --author Assistant`, 2, /^ab: todo-comment: give the author once/],
+      [`${AB} todo-comment '{"id":"nope","text":"x"}'`, 5, /^ab: todo-comment: no to-do nope/],
+      [`${AB} todo-done '{"id":"nope"}'`, 5, /^ab: todo-done: no to-do nope/],
+      [`${AB} todo-done call-vendor`, 2, /^ab: todo-done: usage/],
+      [`${AB} todo-reopen '{"id":"call-vendor","at":"now"}'`, 2, /^ab: todo-reopen: unknown key at/],
+      [`${AB} todo-reopen '{"id":"nope"}'`, 5, /^ab: todo-reopen: no to-do nope/],
+      [`${AB} todo-list --view week`, 2, /^ab: todo-list: usage: ab todo-list \[--view today\|upcoming\|done\|all\]/],
+      [`${AB} todo-list extra`, 2, /^ab: todo-list: usage/],
+    ];
+    for (const [cmd, code, msg] of cases) refusedTodo(cmd, code, msg);
+    // No temp or lock files are left behind.
+    expect(readdirSync(join(appDir, "src/data")).filter((f) => !f.endsWith(".ts"))).toEqual([]);
+  });
+
+  it("todo commands refuse a todos.ts without its markers (exit 2); check flags it; a missing one is not a check problem", () => {
+    writeFileSync(todosFile, "export const todos = {};\n");
+    refusedTodo(todoAddCmd, 2, /^ab: todos file needs exactly one TODOS-JSON-START and one TODOS-JSON-END marker: .*todos\.ts; refusing to read or write it/);
+    refusedTodo(todoListCmd, 2, /todos file needs exactly one TODOS-JSON-START/);
+    const check = run(`${AB} check`);
+    expect(check.status).toBe(1);
+    expect(check.json().problems).toEqual([expect.stringMatching(/^todos file needs exactly one TODOS-JSON-START and one TODOS-JSON-END marker: /)]);
+    expect(run(openCmd).json().problems).toEqual(check.json().problems);
+    writeFileSync(todosFile, todosSeed.replace('"items": []', '"items": ['));
+    expect(run(`${AB} check`).json().problems).toEqual([expect.stringMatching(/^todos file JSON does not parse/)]);
+    rmSync(todosFile);
+    expect(run(`${AB} check`).status).toBe(0);
+    expect(run(todoDoneCmd).status).toBe(2);
+    expect(run(todoDoneCmd).err).toMatch(/^ab: todos file not found: /);
   });
 });

@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, render, screen, within } from "@testing-librar
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Board } from "../src/data/types";
 import { STORAGE_KEY } from "../src/delivery";
+import { prsPanel, withPrs } from "./board-with-prs";
 
 const at = { answered_by: "chat" as const, answered_at: "2026-11-10T10:00:00.000Z" };
 const opts = [
@@ -53,15 +54,21 @@ const shownIds = () => [...document.querySelectorAll("[data-decision-id]")].map(
 
 async function renderApp() {
   const { default: App } = await import("../src/App");
-  render(<App />);
+  const BoardAndPrs = withPrs(App);
+  render(<BoardAndPrs />);
 }
 
 describe("App", () => {
-  it("hides decisions the file answered in each shape, and shows the B4 sections", async () => {
+  it("hides decisions the file answered in each shape, and shows the Board sections (PR and ticket ones on the PRs tab)", async () => {
     await renderApp();
     expect(shownIds()).toEqual(["single", "multi", "closed"]);
     expect(screen.getByRole("heading", { name: /Needs you\s*3/ })).toBeTruthy();
-    for (const name of ["Waiting on others", "Tickets with no PR yet"]) expect(screen.getByRole("heading", { name: new RegExp(name) })).toBeTruthy();
+    const board = document.querySelector<HTMLElement>(".page")!;
+    for (const name of ["Hotfixes", "Project PRs", "Non-project PRs", "Tickets with no PR yet"]) {
+      expect(within(prsPanel()).getByRole("heading", { name: new RegExp(`^${name}`) })).toBeTruthy();
+      expect(within(board).queryByRole("heading", { name: new RegExp(name) })).toBeNull();
+    }
+    expect(within(board).queryByRole("heading", { name: /Waiting on others|Others' PRs/ })).toBeNull();
     expect(screen.queryByRole("heading", { name: /Parked/ })).toBeNull();
     expect(document.body.textContent).not.toMatch(/parked/i);
     expect(within(card("closed")!).queryByRole("textbox")).toBeNull();

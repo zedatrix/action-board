@@ -5,6 +5,7 @@ import { act, cleanup, fireEvent, render, within } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Board } from "../src/data/types";
 import { STORAGE_KEY } from "../src/delivery";
+import { withPrs } from "./board-with-prs";
 
 const HOOK = "http://hook.test/assistant";
 
@@ -61,9 +62,11 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+// The Board and the PRs tab, where the glance items now are.
 async function renderApp() {
   const { default: App } = await import("../src/App");
-  render(<App />);
+  const BoardAndPrs = withPrs(App);
+  render(<BoardAndPrs />);
 }
 
 // fireEvent returns false when a handler called preventDefault, i.e. the browser would not insert a newline.

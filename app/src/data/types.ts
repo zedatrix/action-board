@@ -24,6 +24,7 @@ export type Decision = {
   // Short bold topic shown at the top of the card. ab raise requires it; answered and older cards lack it.
   title?: string;
   card_ref: string | null;
+  link?: string;
   // 1 to 3 plain sentences shown first: what the item is and what happened. ab raise requires it; older cards lack it.
   context?: string;
   question: string;
@@ -48,10 +49,14 @@ export type Decision = {
   answer?: Answer;
 };
 
-export type WaitingItem = { title: string; who: string; link?: string };
+// Optional on every PR item (older items have none): base and head are the PR's branches, used to file it under
+// Hotfixes, Project PRs or Non-project PRs on the PRs tab; hot: true (set by ab hot) badges it and sorts it first.
+// hot_by / hot_at: who last toggled it with ab hot / ab unhot, and when (ISO UTC), copied from the board's hot map.
+export type PrFields = { base?: string; head?: string; hot?: boolean; hot_by?: string; hot_at?: string };
+export type WaitingItem = { title: string; who: string; link?: string } & PrFields;
 export type Ticket = { id: string; title: string; status: string; link?: string };
 // Someone else's open PR that involves the user. who says what it waits on ("Your review requested", "Waiting on the author"); link is the PR URL.
-export type OtherPR = { title: string; author: string; who: string; link: string };
+export type OtherPR = { title: string; author: string; who: string; link: string } & PrFields;
 
 export type Board = {
   updated_at: string;
@@ -59,7 +64,13 @@ export type Board = {
   // parked is a retired key: always empty, kept optional so older files still load. Parked things are decisions now.
   // others is optional so older files still load; missing means [].
   glance: { waiting: WaitingItem[]; tickets: Ticket[]; others?: OtherPR[]; parked?: never[] };
+  // Explicit HOT toggles (ab hot / ab unhot, the PRs tab flame), keyed by canonical https://github.com/<owner>/<repo>/pull/<n>.
+  // hot:false is a kept unhot, not a missing entry. Wins over the glance's own hot on a refresh. Older files have none.
+  hot?: Record<string, HotMark>;
 };
+
+// One explicit HOT toggle: the state, who set it ("user" from the PRs tab, "cli" by default from ab) and when (ISO UTC).
+export type HotMark = { hot: boolean; by: string; at: string };
 
 // Project tab (data in ./project.ts). Counts leave out duplicate and canceled tickets;
 // left includes in_progress, so done + left = total. title is the tab's label and heading.
@@ -71,3 +82,23 @@ export type Project = {
   parent: { id: string; url: string };
   milestones: ProjectMilestone[];
 };
+// The Board's to-do list (data in ./todos.ts, written only by ab todo-*). Done means done_at is set.
+export type TodoPriority = "urgent" | "high" | "medium" | "low";
+// Eastern (America/New_York) wall clock: date "YYYY-MM-DD", time "HH:MM". No time means any time that day.
+export type TodoDue = { date: string; time?: string };
+export type TodoComment = { id: string; text: string; author: string; at: string };
+export type Todo = {
+  id: string;
+  name: string;
+  description?: string;
+  priority: TodoPriority;
+  due?: TodoDue;
+  // A subtask of that top-level to-do (one level deep only).
+  parent_id?: string;
+  comments: TodoComment[];
+  created_at: string;
+  updated_at: string;
+  // ISO UTC, when it was completed.
+  done_at?: string;
+};
+export type Todos = { updated_at: string; items: Todo[] };

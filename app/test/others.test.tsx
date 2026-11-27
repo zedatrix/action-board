@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, render, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { isBoard, parseBoardSource } from "../src/data/parse";
 import type { Board, OtherPR } from "../src/data/types";
 import { sortOthers } from "../src/others";
+import { prsPanel, sectionHeadings, withPrs } from "./board-with-prs";
 
-const pr = (title: string, who: string, author = "Blake"): OtherPR => ({ title, author, who, link: `https://github.com/o/r/pull/${title.length}${title.charCodeAt(0)}` });
+const pr = (title: string, who: string, author = "Blake"): OtherPR => ({ title, author, who, link: `https://github.com/acme/example-api/pull/${title.length}${title.charCodeAt(0)}` });
 
 // The bundled board for the next import of App; never the real board.ts.
 const state = vi.hoisted(() => ({ board: undefined as unknown }));
@@ -32,11 +33,12 @@ afterEach(() => {
 async function renderApp(board: unknown) {
   state.board = board;
   const { default: App } = await import("../src/App");
-  render(<App />);
+  const BoardAndPrs = withPrs(App);
+  render(<BoardAndPrs />);
 }
 
-const panelHeadings = () => [...document.querySelectorAll(".glance .panel h3")].map((h) => h.textContent?.replace(/\s+/g, " ").trim());
-const othersPanel = () => screen.getByRole("heading", { name: /^Others' PRs with you/ }).closest("section")!;
+const nonProject = () => within(prsPanel()).getByRole("heading", { name: /^Non-project PRs/ }).closest("section")!;
+const othersRows = () => [...nonProject().querySelectorAll<HTMLElement>('li.row[data-item-section="others"]')];
 
 describe("sortOthers", () => {
   it("puts review requested first, case-insensitive, and keeps the order within each group", () => {
@@ -74,27 +76,35 @@ describe("isBoard and others", () => {
   });
 });
 
-describe("Others' PRs with you panel", () => {
-  const others = [pr("Billing banner", "Blake's fixes", "Riley"), pr("Tax tiers", "Your review requested", "Blake"), pr("chat alerts", "review requested", "Kai")];
+// Others' PRs used to have their own Board panel; they now sit on the PRs tab. One someone else authored goes under
+// Review requests; one on the viewer’s account (alice) goes to the section its branches pick (no base or head:
+// Non-project PRs). Each is labeled with where it came from.
+describe("Others' PRs with you on the PRs tab", () => {
+  const others = [pr("Billing banner", "Bob's fixes", "Review Bot"), pr("Tax tiers", "Your review requested", "Bob"), pr("Build alerts", "review requested", "Eli"), pr("Fleet fix", "Bob's fixes", "alice")];
   const glance: Board["glance"] = {
-    waiting: [{ title: "My PR", who: "Vlad", link: "https://github.com/o/r/pull/9" }],
+    waiting: [{ title: "My PR", who: "Dana", link: "https://github.com/acme/example-api/pull/9" }],
     tickets: [{ id: "PROJ-1", title: "A ticket", status: "To Do" }],
     others,
   };
+  const reviewRequests = () => within(prsPanel()).getByRole("heading", { name: /^Review requests/ }).closest("section")!;
+  const requestRows = () => [...reviewRequests().querySelectorAll<HTMLElement>("li.row")];
 
-  it("sits between Waiting on others and Tickets, with its count", async () => {
+  it("files others' PRs under Review requests and the viewer’s with the waiting PRs, with counts, and none on the Board", async () => {
     await renderApp(base(glance));
-    expect(panelHeadings()).toEqual(["Waiting on others 1", "Others' PRs with you 3", "Tickets with no PR yet 1"]);
+    expect(sectionHeadings()).toEqual(["Hotfixes 0", "Non-project PRs 2", "Project PRs 0", "Tickets with no PR yet 1", "Review requests 3", "Other repos 0"]);
+    expect(othersRows().map((r) => r.querySelector(".title")?.textContent)).toEqual(["Fleet fix"]);
+    expect(document.querySelector(".page")!.querySelectorAll("[data-item-section]")).toHaveLength(0);
   });
 
-  it("lists review requests first, each row a new-tab link with title, author and who", async () => {
+  it("lists review requests in file order (no feed dates), each row a new-tab link with title, author and who, labeled Others' PRs with you", async () => {
     await renderApp(base(glance));
-    const lines = [...othersPanel().querySelectorAll("li.row")];
-    expect(lines.map((r) => r.querySelector(".title")?.textContent)).toEqual(["Tax tiers", "chat alerts", "Billing banner"]);
-    expect(lines.map((r) => r.querySelector(".meta")?.textContent)).toEqual(["Blake · Your review requested", "Kai · review requested", "Riley · Blake's fixes"]);
-    for (const [i, r] of lines.entries()) {
+    const entries = requestRows();
+    expect(entries.map((r) => r.querySelector(".origin")?.textContent)).toEqual(["Others' PRs with you", "Others' PRs with you", "Others' PRs with you"]);
+    expect(entries.map((r) => r.querySelector(".title")?.textContent)).toEqual(["Billing banner", "Tax tiers", "Build alerts"]);
+    expect(entries.map((r) => r.querySelector(".meta")?.textContent)).toEqual(["Review Bot · Bob's fixes", "Bob · Your review requested", "Eli · review requested"]);
+    for (const [i, r] of entries.entries()) {
       const a = r.querySelector("a.item")!;
-      expect(a.getAttribute("href")).toBe([others[1], others[2], others[0]][i].link);
+      expect(a.getAttribute("href")).toBe(others[i].link);
       expect(a.getAttribute("target")).toBe("_blank");
       expect(a.getAttribute("rel")).toBe("noopener noreferrer");
     }
@@ -102,9 +112,9 @@ describe("Others' PRs with you panel", () => {
 
   it("gives each row a Message your assistant button and data-item-section others", async () => {
     await renderApp(base(glance));
-    const lines = [...othersPanel().querySelectorAll("li.row")] as HTMLElement[];
-    expect(lines).toHaveLength(3);
-    for (const r of lines) {
+    const entries = [...prsPanel().querySelectorAll<HTMLElement>('li.row[data-item-section="others"]')];
+    expect(entries).toHaveLength(4);
+    for (const r of entries) {
       expect(r.getAttribute("data-item-section")).toBe("others");
       expect(r.getAttribute("data-item-id")).toBe(r.querySelector("a.item")!.getAttribute("href"));
       const title = r.querySelector(".title")!.textContent!;
@@ -112,11 +122,21 @@ describe("Others' PRs with you panel", () => {
     }
   });
 
-  it("shows count 0 and Nothing here. when the file has no others", async () => {
+  it("counts none and lists none when the file has no others", async () => {
     const { others: _, ...old } = glance;
     await renderApp(base(old));
-    expect(panelHeadings()).toEqual(["Waiting on others 1", "Others' PRs with you 0", "Tickets with no PR yet 1"]);
-    expect(within(othersPanel()).getByText("Nothing here.")).toBeTruthy();
-    expect(othersPanel().querySelectorAll("li")).toHaveLength(0);
+    expect(sectionHeadings()).toEqual(["Hotfixes 0", "Non-project PRs 1", "Project PRs 0", "Tickets with no PR yet 1", "Review requests 0", "Other repos 0"]);
+    expect(othersRows()).toHaveLength(0);
+    expect(nonProject().querySelector(".origin")?.textContent).toBe("Waiting on others");
+  });
+
+  it("shows count 0 and Nothing here. in every PR section when there are no PRs", async () => {
+    await renderApp(base({ waiting: [], tickets: glance.tickets }));
+    expect(sectionHeadings()).toEqual(["Hotfixes 0", "Non-project PRs 0", "Project PRs 0", "Tickets with no PR yet 1", "Review requests 0", "Other repos 0"]);
+    for (const name of [/^Hotfixes/, /^Project PRs/, /^Non-project PRs/, /^Review requests/, /^Other repos/]) {
+      const section = within(prsPanel()).getByRole("heading", { name }).closest("section")!;
+      expect(within(section).getByText("Nothing here.")).toBeTruthy();
+      expect(section.querySelectorAll("li")).toHaveLength(0);
+    }
   });
 });

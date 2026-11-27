@@ -63,6 +63,7 @@ export function DecisionCard({ decision, index, onAnswer, onClarify, clarify, no
   const qid = `q-${decision.id}`;
   const tid = `t-${decision.id}`;
   const title = decision.title?.trim() ? decision.title : null;
+  const reference = decision.card_ref || decision.link;
   const blocks = detailBlocks(decision.details);
   // "Today" follows the shared clock, so a stamp gains its date after midnight Eastern with no new board data.
   const stamp = stampOf(decision, now ?? new Date());
@@ -218,7 +219,7 @@ export function DecisionCard({ decision, index, onAnswer, onClarify, clarify, no
 
       {/* Footer: the evidence link on the left, "Not relevant anymore" at the bottom right, away from the answers. */}
       <div className="card-foot">
-        {decision.card_ref && <CardRef text={decision.card_ref} />}
+        {reference && <CardRef text={reference} href={decision.link} />}
         <div className="not-relevant">
           {(notRelevant?.status === "sending" || notRelevant?.status === "clearing") && (
             <p className="not-relevant-status" role="status">
@@ -245,8 +246,8 @@ export function DecisionCard({ decision, index, onAnswer, onClarify, clarify, no
 }
 
 // A bare URL ref is itself the link, keeping the .evidence look. Other refs stay a span, with any URLs inside linked.
-function CardRef({ text }: { text: string }) {
-  const url = bareUrl(text);
+function CardRef({ text, href }: { text: string; href?: string }) {
+  const url = bareUrl(href ?? "") || bareUrl(text);
   if (url) return <Link className="evidence" href={url}>{text}</Link>;
   return <span className="evidence">{linkify(text)}</span>;
 }

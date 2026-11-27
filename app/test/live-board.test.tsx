@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Board } from "../src/data/types";
 import { STORAGE_KEY } from "../src/delivery";
 import { BOARD_PATH, EVENTS_PATH, POLL_MS } from "../src/useLiveBoard";
+import { withPrs } from "./board-with-prs";
 
 const d = (id: string, extra: object = {}) => ({
   id,
@@ -77,9 +78,11 @@ afterEach(() => {
 
 const shownIds = () => [...document.querySelectorAll("[data-decision-id]")].map((e) => e.getAttribute("data-decision-id"));
 
+// The Board and the PRs tab (glance items), on one shared stream.
 async function renderApp() {
   const { default: App } = await import("../src/App");
-  render(<App />);
+  const BoardAndPrs = withPrs(App);
+  render(<BoardAndPrs />);
   const es = FakeEventSource.instances.at(-1)!;
   expect(es.url).toBe(EVENTS_PATH);
   act(() => es.open());
