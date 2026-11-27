@@ -13,7 +13,7 @@ const ROOT = fileURLToPath(new URL("../..", import.meta.url));
 const README = readFileSync(join(ROOT, "README.md"), "utf8");
 const AB = "node bin/ab.mjs";
 const commands = [...README.matchAll(/```sh\n(node bin\/ab\.mjs [^\n]+)\n```/g)].map((m) => m[1]);
-const [raiseCmd, answerCmd, answerMultiCmd, answerCustomCmd, clearCmd, restoreCmd, priorityCmd, glanceCmd, hotCmd, unhotCmd, openCmd, checkCmd, lintCmd, backfillCmd, backfillTitlesCmd, projectCmd,
+const [raiseCmd, lintCardCmd, answerCmd, answerMultiCmd, answerCustomCmd, clearCmd, restoreCmd, priorityCmd, glanceCmd, hotCmd, unhotCmd, openCmd, checkCmd, lintCmd, backfillCmd, backfillTitlesCmd, projectCmd,
   todoAddCmd, todoUpdateCmd, todoCommentCmd, todoListCmd, todoDoneCmd, todoReopenCmd] = commands;
 
 const repo = mkdtempSync(join(tmpdir(), "ab-readme-"));
@@ -107,7 +107,7 @@ const refused = (cmd: string, code: number, msg: RegExp) => {
 describe("README ab.mjs commands", () => {
   it("finds one command per subcommand, plus multi-select and free-text answers", () => {
     expect(commands.map((c) => c.split(" ")[2])).toEqual([
-      "raise", "answer", "answer", "answer", "clear", "restore", "priority", "glance", "hot", "unhot", "open", "check", "lint", "backfill-stamps", "backfill-titles", "project-refresh",
+      "raise", "lint-card", "answer", "answer", "answer", "clear", "restore", "priority", "glance", "hot", "unhot", "open", "check", "lint", "backfill-stamps", "backfill-titles", "project-refresh",
       "todo-add", "todo-update", "todo-comment", "todo-list", "todo-done", "todo-reopen",
     ]);
     expect(raiseCmd).not.toMatch(/'.*'.*'/);
@@ -171,6 +171,14 @@ describe("README ab.mjs commands", () => {
     expect(find("from-stdin")).toMatchObject({ card_ref: "https://example.com/pr/1", link: "https://example.com/pr/1", multiSelect: true });
   });
 
+  it("lint-card: validates stdin as documented without a board file", () => {
+    writeFileSync(join(repo, "decision.json"), JSON.stringify(raiseJson));
+    const missing = join(appDir, "src/data/missing-board.ts");
+    const r = run(lintCardCmd, { AB_FILE: missing });
+    expect([r.status, r.json()]).toEqual([0, { ok: true }]);
+    expect(existsSync(missing)).toBe(false);
+  });
+
   it("raise: refuses bad input with exit 2", () => {
     const { title: _, ...noTitle } = raiseJson;
     const opts = raiseJson.options;
@@ -189,10 +197,10 @@ describe("README ab.mjs commands", () => {
       [{ ...raiseJson, multiSelect: "yes" }, /multiSelect must be true or false/],
       [{ ...raiseJson, allowCustom: 0 }, /allowCustom must be true or false/],
       [{ ...raiseJson, context: undefined }, /^ab: context is required/],
-      [{ ...raiseJson, context: "PROJ-14382 #11461" }, /^ab: context needs at least 6 plain words/],
+      [{ ...raiseJson, context: "ACME-123 #101", link: "https://github.com/acme/example-api/pull/101", card_ref: "https://linear.app/acme/issue/ACME-123" }, /^ab: context needs at least 6 plain words/],
       [{ ...raiseJson, question: "Should the PR be merged now?" }, /^ab: question: "the PR" is vague\. Name the thing in plain words/],
       [{ ...raiseJson, question: "Merge it now?" }, /^ab: question: "it" is vague/],
-      [{ ...raiseJson, title: "Merge #11461?" }, /^ab: title: "Merge #11461\?" is only an id\. Add plain words/],
+      [{ ...raiseJson, title: "Merge #101?", link: "https://github.com/acme/example-api/pull/101" }, /^ab: title: "Merge #101\?" is only an id\. Add plain words/],
       [{ ...raiseJson, title: "a".repeat(61) }, /^ab: title is 61 chars; keep it to 60 or fewer/],
       [{ ...raiseJson, title: "Q3 vendor\ncontract renewal" }, /^ab: title must be one line/],
       [{ ...raiseJson, title: 11461 }, /^ab: title is required/],

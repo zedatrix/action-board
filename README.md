@@ -60,6 +60,7 @@ project tab, no hash means the Board. Arrow keys, Home and End move between tabs
   Medium. When nothing is open the page says "Nothing needs you right now."
 - **A decision card**, top to bottom:
   - the **title** in bold, then the **context** (1 to 3 plain sentences: what this is and what happened);
+  - the **evidence link** when `link` supplies a separate URL from the reference in the footer;
   - the **question**, with a time stamp at the top right: "added 9:14 AM" for a new card, "updated Nov 12, 2:40 PM"
     after a re-raise, in the configured time zone;
   - the **priority control**: three segments, High, Medium, Low. The active one is the card's priority. One tap on
@@ -354,6 +355,12 @@ its own location. The examples run from the repository root.
 - Writes are serialized by a lock. Every write also refreshes the board's own `updated_at`.
 - A command that refuses changes nothing.
 
+### Laws
+
+| Law | Rule |
+| --- | --- |
+| q | Every PR or ticket named in a decision's title, context or question needs its matching evidence URL. |
+
 ### Exit codes
 
 | Code | Meaning |
@@ -411,11 +418,15 @@ Fields (anything else, including `answer` and `updated_at`, is refused with exit
 | `link` | no | A stored evidence URL for the Board and chat card. Fills an absent `card_ref`. |
 | `created_at` | no | ISO time. Used only for a new card (or an old card that has none); default now. |
 
-The link guard checks GitHub and Linear references on every raise. GitHub links use
-`https://github.com/<owner>/<repo>/pull/<number>` and Linear links use
-`https://linear.app/<workspace>/issue/<key>`. When `card_ref` is a bare PR number, a named repo and number, or a
-ticket key, a supplied `link` must match it. A bare reference can stand alone. An invalid or mismatched reference
-exits 2 before changing the board.
+Law q checks the title, context and question on every raise, including updates to an open card. Supply a matching
+URL for each PR or ticket in `link`, a URL `card_ref` or the card text. GitHub links use
+`https://github.com/<owner>/<repo>/pull/<number>`. A bare number like `#101` or `PR101` matches any owner and
+repository with that PR number. A reference like `acme/example-api#101` must also match the owner and repository.
+Ticket keys such as `ACME-123` match the key in a Linear URL like `https://linear.app/acme/issue/ACME-123`.
+Ticket prefixes have 2 to 10 letters. UTF, ISO, COVID, SHA and X are excluded.
+The command exits 2 with an `ab: raise: law q:` message that tells you how to fix the payload.
+
+When `card_ref` is a bare PR reference or ticket key, a supplied `link` must also match it.
 
 Refusals with exit 4: the id was cleared before ("use a new id only for a genuinely new decision"), or the id is
 already answered.
@@ -451,6 +462,18 @@ When the card has `details`, the card also has `"details"` (after `question`) as
 bullet, `Label:` then `- item` or `1. item` for a labeled list. `options` are the labels in input order. `link` is the
 stored `card_ref` (or `null`). `priority` is the effective priority (`medium` when none is stored); `blocking` is the raised value and
 `blocks` the stored one (`null` when there is none).
+
+### lint-card
+
+Validates a proposed raise with the same payload checks, including law q. The command accepts JSON as an argument
+or on stdin and does not access the board or contact the live server.
+
+```sh
+node bin/ab.mjs lint-card < decision.json
+```
+
+Valid input returns `{"ok":true}` with exit 0. Invalid input returns `{"ok":false,"error":"..."}` with exit 2.
+Law q refusals also include `"law":"q"`.
 
 ### answer
 
